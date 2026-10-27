@@ -2,7 +2,7 @@
 
 PHP-based management website for the KHAN gold and jewelry marketplace.
 
-## Stage 4 status
+## Stage 5 status
 
 This repository contains the dependency-free project bootstrap and Firebase Authentication foundation:
 
@@ -11,16 +11,17 @@ This repository contains the dependency-free project bootstrap and Firebase Auth
 - A `/` welcome route and `/health` health route.
 - Firebase email/password signup and login through the Firebase Authentication REST API.
 - A minimal protected `GET /auth/me` endpoint using verified Firebase ID tokens.
+- A read-only Firestore user-profile lookup at `users/{uid}` for `/auth/me`.
 - Dependency-free server-side Firebase ID-token verification using Google’s published secure-token certificates.
 - Placeholders for application, configuration, routes, views, storage, and tests.
-- No protected dashboards, Firestore, Supabase Storage, uploads, applications, or admin workflows yet.
+- No protected dashboards, Supabase Storage, uploads, applications, or admin workflows yet.
 
 ## Technology stack
 
 - PHP 8.2
 - Apache through XAMPP
 - Firebase Authentication through REST APIs
-- Cloud Firestore (planned)
+- Cloud Firestore through the REST API
 - Supabase Storage with a private `jeweler-documents` bucket (planned)
 
 ## Prerequisites
@@ -61,7 +62,9 @@ The authentication endpoints require a JSON body containing `email` and `passwor
 
 `.env.example` documents the application settings and Firebase Authentication placeholders. The application does not parse `.env` files; Apache/PHP environment variables are the supported runtime configuration mechanism. If using a local `.env` file with a separate development tool, keep it ignored by Git.
 
-The reusable `FirebaseIdTokenVerifier` validates the bearer token signature with Google’s published certificates and checks the `RS256`, `kid`, `exp`, `iat`, `aud`, `iss`, `sub`, and `auth_time` requirements. It caches certificates using the upstream `Cache-Control: max-age` value and rejects duplicate JSON object keys in tokens and key-cache responses instead of relying on PHP’s last-key-wins JSON behavior. `GET /auth/me` uses only the verified `sub` claim as the UID and optionally returns a valid verified email claim.
+The reusable `FirebaseIdTokenVerifier` validates the bearer token signature with Google’s published certificates and checks the `RS256`, `kid`, `exp`, `iat`, `aud`, `iss`, `sub`, and `auth_time` requirements. It caches certificates using the upstream `Cache-Control: max-age` value and rejects duplicate JSON object keys in tokens and key-cache responses instead of relying on PHP’s last-key-wins JSON behavior. `GET /auth/me` uses only the verified `sub` claim as the UID, reads `users/{uid}` from Firestore with the verified Firebase ID token, and returns only `displayName` and `photoUrl` from the profile document plus a valid verified email claim.
+
+Firestore REST access uses the verified Firebase ID token, not a service-account key. Enable Firestore for the Firebase project and configure Security Rules so a signed-in user can read only their own profile document, for example `users/{request.auth.uid}`. Profiles are not created automatically in this stage. A missing profile returns `404`; denied access returns `403`; missing configuration or upstream failures return safe `503` responses.
 
 Never put Firebase service-account credentials, private keys, Supabase service-role keys, uploaded documents, or production secrets in the repository or under `public/`. Store them in protected server environment configuration or an approved secret manager.
 
@@ -83,4 +86,5 @@ Before the next implementation stage:
 
 - Confirm the Apache virtual host/document root points to `public/`.
 - Provide `FIREBASE_WEB_API_KEY` and `FIREBASE_PROJECT_ID` through protected server configuration for a real Firebase project.
+- Enable Cloud Firestore and create the required `users/{uid}` documents and user-scoped Security Rules.
 - Expand protected functionality only after reviewing the `GET /auth/me` verification boundary and its fail-closed behavior.

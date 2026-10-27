@@ -24,17 +24,6 @@ if (!is_file($firebaseAuthClientFile)) {
 
 require_once $firebaseAuthClientFile;
 
-$firebaseTokenVerifierFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirebaseIdTokenVerifier.php';
-
-if (!is_file($firebaseTokenVerifierFile)) {
-    http_response_code(500);
-    header('Content-Type: text/plain; charset=utf-8');
-    echo 'Authentication verification service is unavailable.';
-    exit;
-}
-
-require_once $firebaseTokenVerifierFile;
-
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
 
@@ -164,6 +153,24 @@ function handleCurrentUserRequest(): never
 {
     header('Content-Type: application/json; charset=utf-8');
 
+    $firebaseTokenVerifierFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirebaseIdTokenVerifier.php';
+
+    if (!is_file($firebaseTokenVerifierFile)) {
+        error_log('Firebase token verifier file is unavailable.');
+        sendAuthenticationError('Authentication service is temporarily unavailable.', 503);
+    }
+
+    require_once $firebaseTokenVerifierFile;
+
+    $firestoreClientFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirestoreClient.php';
+
+    if (!is_file($firestoreClientFile)) {
+        error_log('Firestore client file is unavailable.');
+        sendAuthenticationError('Profile service is temporarily unavailable.', 503);
+    }
+
+    require_once $firestoreClientFile;
+
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
         http_response_code(405);
         header('Allow: GET');
@@ -186,7 +193,8 @@ function handleCurrentUserRequest(): never
             dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'firebase-public-keys.json',
             $timeoutSeconds
         );
-        $claims = $verifier->verifyAuthorizationHeader($_SERVER['HTTP_AUTHORIZATION'] ?? null);
+        $authorizationHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? null;
+        $claims = $verifier->verifyAuthorizationHeader($authorizationHeader);
     } catch (FirebaseTokenVerificationException) {
         sendAuthenticationError('Authentication required.', 401);
     } catch (FirebaseKeyFetchException) {
@@ -207,10 +215,49 @@ function handleCurrentUserRequest(): never
         sendAuthenticationError('Authentication service is temporarily unavailable.', 503);
     }
 
+    if (!is_string($authorizationHeader) ||
+        !preg_match('/^Bearer[ \t]+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/', $authorizationHeader, $tokenMatches)
+    ) {
+        error_log('Firebase token authorization header was unavailable after verification.');
+        sendAuthenticationError('Authentication service is temporarily unavailable.', 503);
+    }
+
+    try {
+        $firestore = new FirestoreClient($projectId, $timeoutSeconds);
+        $profileDocument = $firestore->getUserProfile($uid, $tokenMatches[1]);
+    } catch (FirestoreException $exception) {
+        sendAuthenticationError($exception->getMessage(), $exception->httpStatus());
+    } catch (InvalidArgumentException $exception) {
+        error_log('Firestore profile configuration is invalid.');
+        sendAuthenticationError('Profile service is not configured.', 503);
+    } catch (Throwable $exception) {
+        error_log('Unexpected Firestore profile failure: ' . get_class($exception) . '.');
+        sendAuthenticationError('Profile service is temporarily unavailable.', 503);
+    }
+
+    if ($profileDocument === null) {
+        sendAuthenticationError('User profile was not found.', 404);
+    }
+
     $response = ['uid' => $uid];
 
     if (is_string($claims['email'] ?? null) && filter_var($claims['email'], FILTER_VALIDATE_EMAIL)) {
         $response['email'] = $claims['email'];
+    }
+
+    $fields = $profileDocument['fields'] ?? [];
+
+    if (!is_array($fields)) {
+        error_log('Firestore profile response contained invalid fields.');
+        sendAuthenticationError('Profile service returned an invalid response.', 503);
+    }
+
+    foreach (['displayName', 'photoUrl'] as $fieldName) {
+        $fieldValue = $fields[$fieldName]['stringValue'] ?? null;
+
+        if (is_string($fieldValue)) {
+            $response[$fieldName] = $fieldValue;
+        }
     }
 
     http_response_code(200);
