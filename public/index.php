@@ -24,6 +24,17 @@ if (!is_file($firebaseAuthClientFile)) {
 
 require_once $firebaseAuthClientFile;
 
+$firebaseTokenVerifierFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirebaseIdTokenVerifier.php';
+
+if (!is_file($firebaseTokenVerifierFile)) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo 'Authentication verification service is unavailable.';
+    exit;
+}
+
+require_once $firebaseTokenVerifierFile;
+
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
 
@@ -33,6 +44,11 @@ if ($basePath !== '' && str_starts_with($path, $basePath)) {
 
 if ($path === '/auth/signup' || $path === '/auth/login') {
     handleAuthenticationRequest($path);
+    exit;
+}
+
+if ($path === '/auth/me') {
+    handleCurrentUserRequest();
     exit;
 }
 
@@ -138,5 +154,66 @@ function sendAuthenticationError(string $message, int $status): never
 {
     http_response_code($status);
     echo json_encode(['error' => $message]);
+    exit;
+}
+
+/**
+ * @return never
+ */
+function handleCurrentUserRequest(): never
+{
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+        http_response_code(405);
+        header('Allow: GET');
+        echo json_encode(['error' => 'Method not allowed.']);
+        exit;
+    }
+
+    $projectId = getenv('FIREBASE_PROJECT_ID') ?: '';
+    $timeout = getenv('FIREBASE_AUTH_TIMEOUT_SECONDS');
+    $timeoutSeconds = $timeout === false || $timeout === '' ? 10 : filter_var($timeout, FILTER_VALIDATE_INT);
+
+    if ($timeoutSeconds === false || $projectId === '') {
+        error_log('Firebase token verification is not configured.');
+        sendAuthenticationError('Authentication service is not configured.', 503);
+    }
+
+    try {
+        $verifier = new FirebaseIdTokenVerifier(
+            $projectId,
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'firebase-public-keys.json',
+            $timeoutSeconds
+        );
+        $claims = $verifier->verifyAuthorizationHeader($_SERVER['HTTP_AUTHORIZATION'] ?? null);
+    } catch (FirebaseTokenVerificationException) {
+        sendAuthenticationError('Authentication required.', 401);
+    } catch (FirebaseKeyFetchException) {
+        error_log('Firebase token verification service is unavailable.');
+        sendAuthenticationError('Authentication service is temporarily unavailable.', 503);
+    } catch (InvalidArgumentException) {
+        error_log('Firebase token verification configuration is invalid.');
+        sendAuthenticationError('Authentication service is not configured.', 503);
+    } catch (Throwable $exception) {
+        error_log('Unexpected Firebase token verification failure: ' . get_class($exception) . '.');
+        sendAuthenticationError('Authentication service is temporarily unavailable.', 503);
+    }
+
+    $uid = $claims['sub'] ?? null;
+
+    if (!is_string($uid) || $uid === '') {
+        error_log('Firebase verifier returned an invalid subject claim.');
+        sendAuthenticationError('Authentication service is temporarily unavailable.', 503);
+    }
+
+    $response = ['uid' => $uid];
+
+    if (is_string($claims['email'] ?? null) && filter_var($claims['email'], FILTER_VALIDATE_EMAIL)) {
+        $response['email'] = $claims['email'];
+    }
+
+    http_response_code(200);
+    echo json_encode($response);
     exit;
 }

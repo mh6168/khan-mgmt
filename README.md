@@ -2,7 +2,7 @@
 
 PHP-based management website for the KHAN gold and jewelry marketplace.
 
-## Stage 2 status
+## Stage 4 status
 
 This repository contains the dependency-free project bootstrap and Firebase Authentication foundation:
 
@@ -10,8 +10,10 @@ This repository contains the dependency-free project bootstrap and Firebase Auth
 - A development/production-aware error-handling bootstrap.
 - A `/` welcome route and `/health` health route.
 - Firebase email/password signup and login through the Firebase Authentication REST API.
+- A minimal protected `GET /auth/me` endpoint using verified Firebase ID tokens.
+- Dependency-free server-side Firebase ID-token verification using Google’s published secure-token certificates.
 - Placeholders for application, configuration, routes, views, storage, and tests.
-- No token verification, protected dashboards, Firestore, Supabase Storage, uploads, applications, or admin workflows yet.
+- No protected dashboards, Firestore, Supabase Storage, uploads, applications, or admin workflows yet.
 
 ## Technology stack
 
@@ -44,19 +46,22 @@ The current XAMPP PHP installation includes the baseline extensions needed by th
    The web server should expose `public/`, not the repository root. A virtual host or document-root change may be configured separately later, but none is assumed here.
 3. Ensure Apache has `mod_rewrite` enabled and permits `.htaccess` overrides so `public/.htaccess` can route non-file requests to `public/index.php`.
 4. Copy `.env.example` to `.env` only when local environment configuration is needed. Keep `.env` local; it is ignored by Git.
-5. Set `FIREBASE_WEB_API_KEY` in the server environment to the Web API key for the Firebase project when authentication testing is needed. Do not put credentials in the repository.
+5. Set `FIREBASE_WEB_API_KEY` and `FIREBASE_PROJECT_ID` in the server environment to the values for the Firebase project when authentication testing is needed. Do not put credentials in the repository.
 6. Open the configured local URL in a browser:
 
    - `/` — welcome response
    - `/health` — health response
    - `POST /auth/signup` — creates an email/password Firebase account
    - `POST /auth/login` — signs in an email/password Firebase account
+   - `GET /auth/me` — returns the UID from a successfully verified Firebase ID token
 
 The authentication endpoints require a JSON body containing `email` and `password`. They return Firebase's ID token, refresh token, expiry, local UID, and email on success. A missing `FIREBASE_WEB_API_KEY` returns a configuration error without attempting a request.
 
 ## Environment configuration
 
 `.env.example` documents the application settings and Firebase Authentication placeholders. The application does not parse `.env` files; Apache/PHP environment variables are the supported runtime configuration mechanism. If using a local `.env` file with a separate development tool, keep it ignored by Git.
+
+The reusable `FirebaseIdTokenVerifier` validates the bearer token signature with Google’s published certificates and checks the `RS256`, `kid`, `exp`, `iat`, `aud`, `iss`, `sub`, and `auth_time` requirements. It caches certificates using the upstream `Cache-Control: max-age` value and rejects duplicate JSON object keys in tokens and key-cache responses instead of relying on PHP’s last-key-wins JSON behavior. `GET /auth/me` uses only the verified `sub` claim as the UID and optionally returns a valid verified email claim.
 
 Never put Firebase service-account credentials, private keys, Supabase service-role keys, uploaded documents, or production secrets in the repository or under `public/`. Store them in protected server environment configuration or an approved secret manager.
 
@@ -77,5 +82,5 @@ The application can also be checked by requesting `/health` through Apache. Fire
 Before the next implementation stage:
 
 - Confirm the Apache virtual host/document root points to `public/`.
-- Provide `FIREBASE_WEB_API_KEY` through protected server configuration for a real Firebase project.
-- Decide the secure server-side ID-token verification approach before adding protected routes. Do not decode JWTs without cryptographic verification.
+- Provide `FIREBASE_WEB_API_KEY` and `FIREBASE_PROJECT_ID` through protected server configuration for a real Firebase project.
+- Expand protected functionality only after reviewing the `GET /auth/me` verification boundary and its fail-closed behavior.

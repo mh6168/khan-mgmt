@@ -73,6 +73,8 @@ final class FirebaseAuthClient
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
                 'Accept: application/json',
@@ -82,12 +84,11 @@ final class FirebaseAuthClient
         ]);
 
         $responseBody = curl_exec($handle);
-        $curlError = curl_error($handle);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         curl_close($handle);
 
         if ($responseBody === false) {
-            error_log('Firebase Authentication request failed: ' . $curlError);
+            error_log('Firebase Authentication request failed: network error.');
             throw new FirebaseAuthException('Firebase Authentication is temporarily unavailable.', 502);
         }
 
@@ -105,7 +106,7 @@ final class FirebaseAuthClient
 
         if ($httpStatus < 200 || $httpStatus >= 300) {
             $firebaseMessage = $response['error']['message'] ?? '';
-            error_log('Firebase Authentication rejected a request: ' . (is_string($firebaseMessage) ? $firebaseMessage : 'unknown error'));
+            error_log('Firebase Authentication rejected a request: HTTP ' . $httpStatus . '.');
             throw new FirebaseAuthException(
                 self::clientMessage($firebaseMessage),
                 self::statusForFirebaseError($firebaseMessage)
