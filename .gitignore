@@ -1,0 +1,29 @@
+# Local environment configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies (Composer is added in a later stage)
+/vendor/
+
+# Runtime data must remain outside the public web root
+/storage/*
+!/storage/.gitkeep
+/public/uploads/
+
+# Local logs and temporary files
+*.log
+*.tmp
+*.cache
+*.key
+*.pem
+*.p12
+service-account*.json
+firebase-service-account*.json
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.phpunit.result.cache
+Thumbs.db
+desktop.ini
