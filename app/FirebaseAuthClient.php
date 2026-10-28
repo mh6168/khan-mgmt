@@ -31,6 +31,10 @@ final class FirebaseAuthClient
             throw new FirebaseAuthException('Firebase Authentication is not configured.', 503);
         }
 
+        if (!function_exists('curl_init')) {
+            throw new FirebaseAuthException('Firebase Authentication requires the PHP cURL extension.', 503);
+        }
+
         if ($this->timeoutSeconds < 1 || $this->timeoutSeconds > 60) {
             throw new InvalidArgumentException('Firebase Authentication timeout must be between 1 and 60 seconds.');
         }
@@ -85,10 +89,13 @@ final class FirebaseAuthClient
 
         $responseBody = curl_exec($handle);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+        $curlErrorNumber = curl_errno($handle);
+        $curlError = curl_error($handle);
         curl_close($handle);
 
         if ($responseBody === false) {
-            error_log('Firebase Authentication request failed: network error.');
+            $safeCurlError = preg_replace('/[^A-Za-z0-9 .:_-]/', '', $curlError) ?: 'unknown error';
+            error_log('Firebase Authentication request failed: category=network, curl_errno=' . $curlErrorNumber . ', reason=' . $safeCurlError . '.');
             throw new FirebaseAuthException('Firebase Authentication is temporarily unavailable.', 502);
         }
 
@@ -106,7 +113,8 @@ final class FirebaseAuthClient
 
         if ($httpStatus < 200 || $httpStatus >= 300) {
             $firebaseMessage = $response['error']['message'] ?? '';
-            error_log('Firebase Authentication rejected a request: HTTP ' . $httpStatus . '.');
+            $errorCode = is_string($firebaseMessage) && $firebaseMessage !== '' ? $firebaseMessage : 'UNKNOWN';
+            error_log('Firebase Authentication rejected a request: category=upstream, code=' . preg_replace('/[^A-Z0-9_-]/', '', $errorCode) . ', HTTP ' . $httpStatus . '.');
             throw new FirebaseAuthException(
                 self::clientMessage($firebaseMessage),
                 self::statusForFirebaseError($firebaseMessage)

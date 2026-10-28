@@ -25,7 +25,7 @@ if (!is_file($firebaseAuthClientFile)) {
 require_once $firebaseAuthClientFile;
 
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+$basePath = applicationBasePath();
 
 if ($basePath !== '' && str_starts_with($path, $basePath)) {
     $path = substr($path, strlen($basePath)) ?: '/';
@@ -80,6 +80,26 @@ if ($path === '/' || $path === '/health') {
 http_response_code(404);
 echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Not Found</title></head>';
 echo '<body><h1>Not Found</h1><p>The requested page was not found.</p></body></html>';
+
+function applicationBasePath(): string
+{
+    $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+    $directory = dirname($scriptName);
+
+    if ($directory === '.' || $directory === '/') {
+        return '';
+    }
+
+    return '/' . trim($directory, '/');
+}
+
+function applicationUrl(string $route): string
+{
+    $route = '/' . ltrim($route, '/');
+    $basePath = applicationBasePath();
+
+    return $basePath . $route;
+}
 
 /**
  * @return never
@@ -232,17 +252,17 @@ function handleCurrentUserRequest(): never
                 'onboardingStatus' => 'not_started',
             ]);
             establishSession($token, $claims);
-            header('Location: /jeweler/application', true, 303);
+            header('Location: ' . applicationUrl('/jeweler/application'), true, 303);
             exit;
         } catch (FirebaseAuthException | FirebaseTokenVerificationException | FirebaseKeyFetchException | FirestoreException $exception) {
-            error_log('Signup service failure: ' . get_class($exception) . '.');
-            renderAuthPage('signup', ['errors' => ['The account could not be created right now. Please try again.'], 'input' => $input]);
+            error_log(signupFailureLog($exception));
+            renderAuthPage('signup', ['errors' => [signupFailureMessage($exception)], 'input' => $input]);
         } catch (InvalidArgumentException $exception) {
-            error_log('Signup configuration failure.');
-            renderAuthPage('signup', ['errors' => ['Sign-up is not configured yet. Please contact support.'], 'input' => $input]);
+            error_log(signupFailureLog($exception));
+            renderAuthPage('signup', ['errors' => [isDevelopmentMode() ? signupDiagnosticMessage($exception) : 'Sign-up is not configured yet. Please contact support.'], 'input' => $input]);
         } catch (Throwable $exception) {
-            error_log('Unexpected signup failure: ' . get_class($exception) . '.');
-            renderAuthPage('signup', ['errors' => ['The account could not be created right now. Please try again.'], 'input' => $input]);
+            error_log(signupFailureLog($exception));
+            renderAuthPage('signup', ['errors' => [signupFailureMessage($exception)], 'input' => $input]);
         }
     }
 
@@ -277,7 +297,7 @@ function handleCurrentUserRequest(): never
             $profile = $firestore->getUserProfile($uid, $token);
             establishSession($token, $claims);
             $status = is_array($profile) ? profileStatus($profile) : 'not_started';
-            header('Location: ' . ($status === 'not_started' ? '/jeweler/application' : '/jeweler/application'), true, 303);
+            header('Location: ' . applicationUrl($status === 'not_started' ? '/jeweler/application' : '/jeweler/application'), true, 303);
             exit;
         } catch (FirebaseAuthException $exception) {
             renderAuthPage('login', ['errors' => [$exception->getMessage()], 'input' => $input]);
@@ -301,7 +321,7 @@ function handleCurrentUserRequest(): never
             setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], (bool) $params['secure'], (bool) $params['httponly']);
         }
         session_destroy();
-        header('Location: /login', true, 303);
+        header('Location: ' . applicationUrl('/login'), true, 303);
         exit;
     }
 
@@ -310,7 +330,7 @@ function handleCurrentUserRequest(): never
         $claims = requireAuthenticatedSession();
         header('Content-Type: text/html; charset=utf-8');
         $email = is_string($claims['email'] ?? null) ? $claims['email'] : '';
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KHAN Jeweler Application</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>Your application starts here.</h1><p class="muted">Welcome' . ($email !== '' ? ', ' . escapeHtml($email) : '') . '. The jeweler application form will be added in the next stage.</p><a class="button" href="/auth/logout">Sign out</a></main></body></html>';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KHAN Jeweler Application</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>Your application starts here.</h1><p class="muted">Welcome' . ($email !== '' ? ', ' . escapeHtml($email) : '') . '. The jeweler application form will be added in the next stage.</p><a class="button" href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Sign out</a></main></body></html>';
         exit;
     }
 
@@ -364,6 +384,57 @@ function handleCurrentUserRequest(): never
             throw new InvalidArgumentException('Authentication timeout is invalid.');
         }
         return $value;
+    }
+
+    function isDevelopmentMode(): bool
+    {
+        return strtolower((string) (getenv('APP_ENV') ?: 'production')) !== 'production'
+            && filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+    }
+
+    function signupFailureLog(Throwable $exception): string
+    {
+        $status = $exception instanceof FirebaseAuthException || $exception instanceof FirestoreException
+            ? $exception->httpStatus()
+            : 500;
+
+        return 'Signup failure: category=' . signupFailureCategory($exception)
+            . ', class=' . get_class($exception)
+            . ', status=' . $status
+            . ', message=' . signupDiagnosticMessage($exception) . '.';
+    }
+
+    function signupFailureCategory(Throwable $exception): string
+    {
+        return match (true) {
+            $exception instanceof FirebaseAuthException => 'firebase-auth',
+            $exception instanceof FirebaseTokenVerificationException,
+            $exception instanceof FirebaseKeyFetchException => 'token-verification',
+            $exception instanceof FirestoreException => 'firestore',
+            $exception instanceof InvalidArgumentException => 'configuration',
+            default => 'runtime',
+        };
+    }
+
+    function signupFailureMessage(Throwable $exception): string
+    {
+        return isDevelopmentMode()
+            ? signupDiagnosticMessage($exception)
+            : 'The account could not be created right now. Please try again.';
+    }
+
+    function signupDiagnosticMessage(Throwable $exception): string
+    {
+        $message = trim($exception->getMessage());
+
+        if ($message === '') {
+            return 'No additional diagnostic message was provided.';
+        }
+
+        $message = preg_replace('/([?&]key=)[^&\s]+/i', '$1[redacted]', $message) ?? $message;
+        $message = preg_replace('/Bearer\s+[A-Za-z0-9._-]+/i', 'Bearer [redacted]', $message) ?? $message;
+
+        return $message;
     }
 
     function requireProjectId(): string
@@ -444,7 +515,7 @@ function handleCurrentUserRequest(): never
     {
         $token = $_SESSION['firebase_id_token'] ?? null;
         if (!is_string($token) || $token === '') {
-            header('Location: /login', true, 303);
+            header('Location: ' . applicationUrl('/login'), true, 303);
             exit;
         }
         try {
@@ -452,7 +523,7 @@ function handleCurrentUserRequest(): never
         } catch (Throwable $exception) {
             error_log('Session verification failed: ' . get_class($exception) . '.');
             $_SESSION = [];
-            header('Location: /login', true, 303);
+            header('Location: ' . applicationUrl('/login'), true, 303);
             exit;
         }
         return $claims;
@@ -468,7 +539,7 @@ function handleCurrentUserRequest(): never
         $errors = is_array($state['errors'] ?? null) ? $state['errors'] : [];
         header('Content-Type: text/html; charset=utf-8');
         $title = $isSignup ? 'Create your KHAN account' : 'Welcome back to KHAN';
-        $action = $isSignup ? '/signup' : '/login';
+        $action = applicationUrl($isSignup ? '/signup' : '/login');
         $fields = $isSignup
             ? '<div class="grid"><label>Legal first name<input name="firstName" required maxlength="100" value="' . escapeHtml((string) ($input['firstName'] ?? '')) . '"></label><label>Legal last name<input name="lastName" required maxlength="100" value="' . escapeHtml((string) ($input['lastName'] ?? '')) . '"></label></div><label>Phone number<input name="phoneNumber" required autocomplete="tel" value="' . escapeHtml((string) ($input['phoneNumber'] ?? '')) . '"></label>'
             : '';
@@ -481,8 +552,10 @@ function handleCurrentUserRequest(): never
             }
             $errorMarkup .= '</ul></div>';
         }
-        $switch = $isSignup ? 'Already have an account? <a href="/login">Sign in</a>' : 'New to KHAN? <a href="/signup">Create an account</a>';
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . escapeHtml($title) . '</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>' . escapeHtml($title) . '</h1><p class="muted">' . ($isSignup ? 'Build your profile and begin your jeweler application.' : 'Sign in securely to continue your journey.') . '</p>' . $errorMarkup . '<form method="post" action="' . $action . '" novalidate>' . $fields . '<label>Email address<input type="email" name="email" required autocomplete="email" value="' . escapeHtml((string) ($input['email'] ?? '')) . '"></label><label>Password<input type="password" name="password" required autocomplete="' . ($isSignup ? 'new-password' : 'current-password') . '"></label>' . $confirm . '<button class="button" type="submit">' . ($isSignup ? 'Create account' : 'Sign in') . '</button></form><p class="switch">' . $switch . '</p></main></body></html>';
+        $switch = $isSignup
+            ? 'Already have an account? <a href="' . escapeHtml(applicationUrl('/login')) . '">Sign in</a>'
+            : 'New to KHAN? <a href="' . escapeHtml(applicationUrl('/signup')) . '">Create an account</a>';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . escapeHtml($title) . '</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>' . escapeHtml($title) . '</h1><p class="muted">' . ($isSignup ? 'Build your profile and begin your jeweler application.' : 'Sign in securely to continue your journey.') . '</p>' . $errorMarkup . '<form method="post" action="' . escapeHtml($action) . '" novalidate>' . $fields . '<label>Email address<input type="email" name="email" required autocomplete="email" value="' . escapeHtml((string) ($input['email'] ?? '')) . '"></label><label>Password<input type="password" name="password" required autocomplete="' . ($isSignup ? 'new-password' : 'current-password') . '"></label>' . $confirm . '<button class="button" type="submit">' . ($isSignup ? 'Create account' : 'Sign in') . '</button></form><p class="switch">' . $switch . '</p></main></body></html>';
         exit;
     }
 
