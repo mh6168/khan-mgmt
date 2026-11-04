@@ -642,7 +642,11 @@ function handleCurrentUserRequest(): never
                 exit;
             }
 
-            $input = applicationPostedInput();
+            $input = [
+                'fullName' => trim((string) ($_POST['fullName'] ?? '')),
+                'phone' => trim((string) ($_POST['phone'] ?? '')),
+                'storeAddress' => trim((string) ($_POST['storeAddress'] ?? '')),
+            ];
             $errors = validateApplicationInput($input, $_FILES, false);
             if ($errors !== []) {
                 renderApplicationForm(['errors' => $errors, 'input' => $input, 'rejectionReason' => applicationRejectionReason($application), 'resubmission' => true]);
