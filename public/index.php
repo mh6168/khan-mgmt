@@ -332,7 +332,10 @@ function handleCurrentUserRequest(): never
             renderAuthPage('login', ['errors' => [$exception->getMessage()], 'input' => $input]);
         } catch (FirebaseTokenVerificationException | FirebaseKeyFetchException | FirestoreException $exception) {
             error_log('Login verification/profile failure: ' . get_class($exception) . '.');
-            renderAuthPage('login', ['errors' => ['Your account could not be verified right now. Please try again.'], 'input' => $input]);
+            $message = $exception instanceof FirestoreException && $exception->httpStatus() === 403
+                ? 'Your Firebase account is valid, but Firestore denied access to the jeweler profile/application. Publish the users and applications security rules, then try again.'
+                : 'Your account could not be verified right now. Please try again.';
+            renderAuthPage('login', ['errors' => [$message], 'input' => $input]);
         } catch (InvalidArgumentException $exception) {
             error_log('Login configuration failure.');
             renderAuthPage('login', ['errors' => ['Sign-in is not configured yet. Please contact support.'], 'input' => $input]);

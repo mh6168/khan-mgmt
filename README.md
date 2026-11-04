@@ -119,6 +119,8 @@ applications/{userId}
 
 The corresponding Firestore rules can be added alongside the existing `users` rules:
 
+The `applications` block must be inside the existing `match /databases/{database}/documents` block, and the complete rules file must be published in the Firebase Console. Without its `allow get` rule, login will authenticate successfully but will receive a Firestore HTTP 403 while checking application status.
+
 ```javascript
 match /applications/{userId} {
   allow create: if request.auth != null
