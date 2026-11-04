@@ -106,6 +106,7 @@ Firestore rules must also allow the authenticated user to create and read only t
 ```text
 applications/{userId}
   fullName
+  storeName
   phone
   storeAddress
   uid
@@ -128,7 +129,7 @@ match /applications/{userId} {
     && request.resource.data.uid == request.auth.uid
     && request.resource.data.status == 'pending'
     && request.resource.data.keys().hasOnly([
-      'fullName', 'phone', 'storeAddress', 'uid',
+      'fullName', 'storeName', 'phone', 'storeAddress', 'uid',
       'nationalIdPath', 'commercialRegisterPath',
       'taxCardPath', 'goldLicensePath', 'status', 'submittedAt'
     ]);
@@ -138,7 +139,7 @@ match /applications/{userId} {
     && request.resource.data.uid == resource.data.uid
     && request.resource.data.status == 'pending'
     && request.resource.data.keys().hasOnly([
-      'fullName', 'phone', 'storeAddress', 'uid',
+      'fullName', 'storeName', 'phone', 'storeAddress', 'uid',
       'nationalIdPath', 'commercialRegisterPath',
       'taxCardPath', 'goldLicensePath', 'status', 'submittedAt'
     ]);

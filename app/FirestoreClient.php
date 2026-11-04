@@ -110,7 +110,7 @@ final class FirestoreClient
     }
 
     /**
-     * @param array{fullName: string, phone: string, storeAddress: string, uid: string, nationalIdPath: string, commercialRegisterPath: string, taxCardPath: string, goldLicensePath: string, status: string, submittedAt: string} $application
+     * @param array{fullName: string, storeName: string, phone: string, storeAddress: string, uid: string, nationalIdPath: string, commercialRegisterPath: string, taxCardPath: string, goldLicensePath: string, status: string, submittedAt: string} $application
      */
     public function createApplication(string $uid, string $firebaseIdToken, array $application): void
     {
@@ -132,7 +132,7 @@ final class FirestoreClient
     }
 
     /**
-     * @param array{fullName: string, phone: string, storeAddress: string, uid: string, nationalIdPath: string, commercialRegisterPath: string, taxCardPath: string, goldLicensePath: string, status: string, submittedAt: string} $application
+     * @param array{fullName: string, storeName: string, phone: string, storeAddress: string, uid: string, nationalIdPath: string, commercialRegisterPath: string, taxCardPath: string, goldLicensePath: string, status: string, submittedAt: string} $application
      */
     public function updateApplication(string $uid, string $firebaseIdToken, array $application): void
     {

@@ -385,6 +385,7 @@ function handleCurrentUserRequest(): never
 
         $input = [
             'fullName' => trim((string) ($_POST['fullName'] ?? '')),
+            'storeName' => trim((string) ($_POST['storeName'] ?? '')),
             'phone' => trim((string) ($_POST['phone'] ?? '')),
             'storeAddress' => trim((string) ($_POST['storeAddress'] ?? '')),
         ];
@@ -421,6 +422,7 @@ function handleCurrentUserRequest(): never
             }
             $firestore->createApplication($uid, $token, [
                 'fullName' => $input['fullName'],
+                'storeName' => $input['storeName'],
                 'phone' => $input['phone'],
                 'storeAddress' => $input['storeAddress'],
                 'uid' => $uid,
@@ -435,7 +437,10 @@ function handleCurrentUserRequest(): never
             exit;
         } catch (SupabaseStorageException | FirestoreException | InvalidArgumentException | JsonException $exception) {
             error_log('Application submission failure: ' . get_class($exception) . '.');
-            renderApplicationForm(['errors' => [isDevelopmentMode() ? signupDiagnosticMessage($exception) : 'The application could not be submitted right now. Please try again.'], 'input' => $input]);
+            $message = $exception instanceof FirestoreException && $exception->httpStatus() === 403
+                ? 'Firestore denied this application. Publish the applications security rules, including the storeName field, then try again.'
+                : (isDevelopmentMode() ? signupDiagnosticMessage($exception) : 'The application could not be submitted right now. Please try again.');
+            renderApplicationForm(['errors' => [$message], 'input' => $input]);
         } catch (Throwable $exception) {
             error_log('Unexpected application submission failure: ' . get_class($exception) . '.');
             renderApplicationForm(['errors' => ['The application could not be submitted right now. Please try again.'], 'input' => $input]);
@@ -460,10 +465,10 @@ function handleCurrentUserRequest(): never
         $fileMarkup = '';
         foreach ($fields as $name => $label) {
             $required = $resubmission ? '' : ' required';
-            $fileMarkup .= '<label>' . escapeHtml($label) . ($resubmission ? ' (leave empty to keep the current document)' : '') . '<input type="file" name="' . $name . '"' . $required . ' accept=".pdf,.jpg,.jpeg,.png"></label>';
+            $fileMarkup .= '<label class="upload-field"><span class="upload-label">' . escapeHtml($label) . '</span><span class="upload-help">' . ($resubmission ? 'اختياري - اتركه فارغًا للاحتفاظ بالمستند الحالي' : 'مطلوب') . ' · PDF, JPG, JPEG, PNG · بحد أقصى 5 MB</span><input type="file" name="' . $name . '"' . $required . ' accept=".pdf,.jpg,.jpeg,.png"></label>';
         }
         header('Content-Type: text/html; charset=utf-8');
-        echo '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KHAN Jeweler Application</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>' . ($resubmission ? 'Resubmit Jeweler Application' : 'Jeweler Application') . '</h1><p class="muted">Complete your application and upload each required document. Maximum file size: 5 MB.</p>' . $reasonMarkup . $errorMarkup . '<form method="post" enctype="multipart/form-data"><label>Full legal name<input name="fullName" required maxlength="200" value="' . escapeHtml((string) ($input['fullName'] ?? '')) . '"></label><label>Phone number<input name="phone" required value="' . escapeHtml((string) ($input['phone'] ?? '')) . '"></label><label>Store location/address<textarea name="storeAddress" required maxlength="500">' . escapeHtml((string) ($input['storeAddress'] ?? '')) . '</textarea></label>' . $fileMarkup . '<button class="button" type="submit">' . ($resubmission ? 'Resubmit application' : 'Submit application') . '</button></form><p class="switch"><a href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Sign out</a></p></main></body></html>';
+        echo '<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KHAN Jeweler Application</title><style>' . authStyles() . '</style></head><body><main class="card application-card"><p class="eyebrow">KHAN JEWELERS</p><h1>' . ($resubmission ? 'Resubmit Jeweler Application' : 'Jeweler Application') . '</h1><p class="muted">Complete your application and upload each required document. Maximum file size: 5 MB.</p>' . $reasonMarkup . $errorMarkup . '<form class="application-form" method="post" enctype="multipart/form-data"><div class="application-details"><label>Full legal name<input name="fullName" required maxlength="200" value="' . escapeHtml((string) ($input['fullName'] ?? '')) . '"></label><label>Store name<input name="storeName" required maxlength="200" value="' . escapeHtml((string) ($input['storeName'] ?? '')) . '"></label><label>Phone number<input name="phone" required value="' . escapeHtml((string) ($input['phone'] ?? '')) . '"></label><label class="address-field">Store location/address<textarea name="storeAddress" required maxlength="500" rows="4" placeholder="Enter the complete store location and address">' . escapeHtml((string) ($input['storeAddress'] ?? '')) . '</textarea></label></div><div class="upload-section"><h2>Required documents</h2><p class="upload-section-help">Upload clear copies of all required documents.</p>' . $fileMarkup . '</div><button class="button" type="submit">' . ($resubmission ? 'Resubmit application' : 'Submit application') . '</button></form><p class="switch"><a href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Sign out</a></p></main></body></html>';
         exit;
     }
 
@@ -471,6 +476,7 @@ function handleCurrentUserRequest(): never
     {
         $errors = [];
         if ($input['fullName'] === '' || strlen($input['fullName']) > 200) $errors[] = 'Full legal name is required.';
+        if ($input['storeName'] === '' || strlen($input['storeName']) > 200) $errors[] = 'Store name is required.';
         if (!preg_match('/^\+?[1-9][0-9 ()-]{6,24}$/', $input['phone'])) $errors[] = 'Enter a valid phone number.';
         if ($input['storeAddress'] === '' || strlen($input['storeAddress']) > 500) $errors[] = 'Store location/address is required.';
         foreach (applicationDocuments() as $field => $label) {
@@ -510,6 +516,7 @@ function handleCurrentUserRequest(): never
     {
         return [
             'fullName' => (string) ($document['fields']['fullName']['stringValue'] ?? ''),
+            'storeName' => (string) ($document['fields']['storeName']['stringValue'] ?? ''),
             'phone' => (string) ($document['fields']['phone']['stringValue'] ?? ''),
             'storeAddress' => (string) ($document['fields']['storeAddress']['stringValue'] ?? ''),
         ];
@@ -647,6 +654,7 @@ function handleCurrentUserRequest(): never
 
             $input = [
                 'fullName' => trim((string) ($_POST['fullName'] ?? '')),
+                'storeName' => trim((string) ($_POST['storeName'] ?? '')),
                 'phone' => trim((string) ($_POST['phone'] ?? '')),
                 'storeAddress' => trim((string) ($_POST['storeAddress'] ?? '')),
             ];
@@ -694,6 +702,7 @@ function handleCurrentUserRequest(): never
 
                 $updatedApplication = [
                     'fullName' => $input['fullName'],
+                    'storeName' => $input['storeName'],
                     'phone' => $input['phone'],
                     'storeAddress' => $input['storeAddress'],
                     'uid' => $uid,
@@ -1032,7 +1041,7 @@ function handleCurrentUserRequest(): never
     function authStyles(): string
     {
         return '
-    :root{color-scheme:dark;--bg:#11100f;--panel:#1b1916;--gold:#d8aa4b;--muted:#b9b1a3;font-family:Inter,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#2b2417,#11100f 55%);color:#f8f2e7}.card{width:min(100%,560px);padding:clamp(28px,6vw,56px);background:rgba(27,25,22,.96);border:1px solid rgba(216,170,75,.35);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.4)}.eyebrow{color:var(--gold);letter-spacing:.18em;font-size:.75rem;font-weight:700}h1{font-family:Georgia,serif;font-weight:500;font-size:clamp(2rem,6vw,3.2rem);margin:.5rem 0 1rem}.muted{color:var(--muted);line-height:1.6}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:560px){.grid{grid-template-columns:1fr}}label{display:block;color:#e8dfd1;font-size:.9rem;margin:18px 0 0}input{display:block;width:100%;margin-top:8px;padding:13px 14px;border:1px solid #55462f;border-radius:8px;background:#121110;color:#fff;font-size:1rem}input:focus{outline:2px solid var(--gold);outline-offset:1px}.button{display:inline-block;width:100%;margin-top:24px;padding:14px;border:0;border-radius:8px;background:var(--gold);color:#1a140b;font-weight:700;font-size:1rem;cursor:pointer}.errors{margin:18px 0;padding:12px 16px;border:1px solid #a34a42;border-radius:8px;background:#3a1c1b;color:#ffd9d4}.errors ul{margin:0;padding-left:18px}.success{margin:18px 0;padding:12px 16px;border:1px solid #5d8a62;border-radius:8px;background:#1d3821;color:#d9f3dc}.errors ul{margin:0;padding-left:18px}.switch{text-align:center;color:var(--muted);margin:24px 0 0}.switch a,.button{color:#1a140b}.switch a{color:var(--gold)}';
+    :root{color-scheme:dark;--bg:#11100f;--panel:#1b1916;--gold:#d8aa4b;--muted:#b9b1a3;font-family:Inter,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#2b2417,#11100f 55%);color:#f8f2e7}.card{width:min(100%,560px);padding:clamp(28px,6vw,56px);background:rgba(27,25,22,.96);border:1px solid rgba(216,170,75,.35);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.4)}.application-card{width:min(100%,720px)}.eyebrow{color:var(--gold);letter-spacing:.18em;font-size:.75rem;font-weight:700}h1{font-family:Georgia,serif;font-weight:500;font-size:clamp(2rem,6vw,3.2rem);margin:.5rem 0 1rem}.muted{color:var(--muted);line-height:1.6}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:560px){.grid{grid-template-columns:1fr}}label{display:block;color:#e8dfd1;font-size:.9rem;margin:18px 0 0}input,textarea{display:block;width:100%;margin-top:8px;padding:13px 14px;border:1px solid #55462f;border-radius:8px;background:#121110;color:#fff;font:inherit;font-size:1rem}textarea{min-height:112px;resize:vertical;line-height:1.5}input:focus,textarea:focus{outline:2px solid var(--gold);outline-offset:1px}.application-details{direction:ltr;text-align:left}.application-form .address-field{margin-top:22px}.application-form .address-field textarea{margin-top:10px}.upload-section{margin-top:28px;padding-top:22px;border-top:1px solid rgba(216,170,75,.2)}.upload-section h2{margin:0;color:#f8f2e7;font-size:1.2rem}.upload-section-help{margin:6px 0 14px;color:var(--muted);font-size:.9rem}.upload-field{margin-top:14px;padding:14px 16px;border:1px solid #55462f;border-radius:10px;background:rgba(18,17,16,.7)}.upload-label{display:block;color:#f8f2e7;font-weight:600}.upload-help{display:block;margin-top:5px;color:var(--muted);font-size:.78rem;line-height:1.5}.upload-field input[type=file]{margin-top:10px;padding:9px;border:1px dashed #806633;background:#171410;color:var(--muted);cursor:pointer}.upload-field input[type=file]::file-selector-button{margin-inline-end:10px;padding:8px 12px;border:0;border-radius:6px;background:var(--gold);color:#1a140b;font-weight:700;cursor:pointer}.button{display:inline-block;width:100%;margin-top:24px;padding:14px;border:0;border-radius:8px;background:var(--gold);color:#1a140b;font-weight:700;font-size:1rem;cursor:pointer}.errors{margin:18px 0;padding:12px 16px;border:1px solid #a34a42;border-radius:8px;background:#3a1c1b;color:#ffd9d4}.errors ul{margin:0;padding-left:18px}.success{margin:18px 0;padding:12px 16px;border:1px solid #5d8a62;border-radius:8px;background:#1d3821;color:#d9f3dc}.errors ul{margin:0;padding-left:18px}.switch{text-align:center;color:var(--muted);margin:24px 0 0}.switch a,.button{color:#1a140b}.switch a{color:var(--gold)}';
     }
 
     /**
