@@ -24,14 +24,14 @@ This repository contains the dependency-free project bootstrap and Firebase Auth
 - Apache through XAMPP
 - Firebase Authentication through REST APIs
 - Cloud Firestore through the REST API
-- Supabase Storage with a private `jeweler-documents` bucket (planned)
+- Supabase Storage REST client for a private `jeweler-documents` bucket
 
 ## Prerequisites
 
 - Windows with XAMPP installed.
 - PHP 8.2 available at `C:\xampp\php\php.exe`.
 - Apache enabled in the XAMPP Control Panel.
-- Composer is not required for the current stages and has not been installed.
+- Composer is not required for the current stages and has not been installed. Firebase Admin SDK is therefore not added; the existing Firebase REST integration avoids introducing a dependency and does not require a service-account key.
 
 The current XAMPP PHP installation includes the baseline extensions needed by the bootstrap and planned HTTP integrations, including `curl`, `fileinfo`, `json`, `mbstring`, `openssl`, and `session`.
 
@@ -48,9 +48,15 @@ The current XAMPP PHP installation includes the baseline extensions needed by th
 
    The web server should expose `public/`, not the repository root. A virtual host or document-root change may be configured separately later, but none is assumed here.
 3. Ensure Apache has `mod_rewrite` enabled and permits `.htaccess` overrides so `public/.htaccess` can route non-file requests to `public/index.php`.
-4. Copy `.env.example` to `.env` only when local environment configuration is needed. Keep `.env` local; it is ignored by Git.
-5. Set `FIREBASE_WEB_API_KEY` and `FIREBASE_PROJECT_ID` in the server environment to the values for the Firebase project when authentication testing is needed. Do not put credentials in the repository.
-6. Open the configured local URL in a browser:
+4. Copy `.env.example` to `.env` and fill in the Firebase and Supabase values. Keep `.env` local; it is ignored by Git.
+5. Set `FIREBASE_WEB_API_KEY` and `FIREBASE_PROJECT_ID` to the existing Khan Firebase project values. Set `SUPABASE_URL`, `SUPABASE_STORAGE_BUCKET`, and `SUPABASE_SERVICE_ROLE_KEY` for the existing Supabase project. Do not put credentials in the repository or frontend.
+6. Run the read-only service connection check:
+
+   ```powershell
+   & 'C:\xampp\php\php.exe' tests\service_connection_test.php
+   ```
+
+7. Open the configured local URL in a browser:
 
    - `/` — welcome response
    - `/health` — health response
@@ -67,6 +73,8 @@ The authentication endpoints require a JSON body containing `email` and `passwor
 ## Environment configuration
 
 `.env.example` documents the application settings and Firebase Authentication placeholders. At startup, the application reads the optional root `.env` file at `C:\xampp\htdocs\khan-mgmt\khan-mgmt\.env` using a minimal `KEY=value` loader. Existing non-empty Apache/PHP environment variables take precedence. Keep the real `.env` file local; it is ignored by Git.
+
+Supabase configuration is backend-only. The service-role key is sent only in server-side REST requests to the configured Storage bucket. It must never be placed in HTML, JavaScript, or any file under `public/`.
 
 The reusable `FirebaseIdTokenVerifier` validates the bearer token signature with Google’s published certificates and checks the `RS256`, `kid`, `exp`, `iat`, `aud`, `iss`, `sub`, and `auth_time` requirements. It caches certificates using the upstream `Cache-Control: max-age` value and rejects duplicate JSON object keys in tokens and key-cache responses instead of relying on PHP’s last-key-wins JSON behavior. `GET /auth/me` uses only the verified `sub` claim as the UID, reads `users/{uid}` from Firestore with the verified Firebase ID token, and returns only `displayName` and `photoUrl` from the profile document plus a valid verified email claim.
 
@@ -103,6 +111,7 @@ The application can also be checked by requesting `/health` through Apache. Fire
 Before the next implementation stage:
 
 - Confirm the Apache virtual host/document root points to `public/`.
-- Provide `FIREBASE_WEB_API_KEY` and `FIREBASE_PROJECT_ID` through protected server configuration for a real Firebase project.
+- Provide Firebase and Supabase values through protected server configuration. The Supabase project must have a private Storage bucket matching `SUPABASE_STORAGE_BUCKET`.
 - Enable Cloud Firestore and create the required `users/{uid}` documents and user-scoped Security Rules.
+- Run `tests\service_connection_test.php` after entering credentials. It does not create users, write Firestore data, upload files, or change either project.
 - Expand protected functionality only after reviewing the `GET /auth/me` verification boundary and its fail-closed behavior.
