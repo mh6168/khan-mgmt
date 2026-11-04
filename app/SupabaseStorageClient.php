@@ -57,6 +57,25 @@ final class SupabaseStorageClient
         );
     }
 
+    public function ensurePrivateBucket(): void
+    {
+        try {
+            $this->checkConnection();
+            return;
+        } catch (SupabaseStorageException $exception) {
+            if ($exception->httpStatus() !== 404) {
+                throw $exception;
+            }
+        }
+
+        $this->request(
+            'POST',
+            '/storage/v1/bucket',
+            json_encode(['name' => $this->bucket, 'public' => false], JSON_THROW_ON_ERROR),
+            'application/json'
+        );
+    }
+
     public function upload(string $path, string $contents, string $contentType): void
     {
         $this->validateObjectPath($path);
@@ -129,7 +148,8 @@ final class SupabaseStorageClient
 
         if ($httpStatus < 200 || $httpStatus >= 300) {
             error_log('Supabase Storage request failed: HTTP ' . $httpStatus . '.');
-            throw new SupabaseStorageException('Supabase Storage rejected the request.', $httpStatus === 401 || $httpStatus === 403 ? 502 : 503);
+            $safeStatus = $httpStatus === 401 || $httpStatus === 403 ? 502 : ($httpStatus === 404 ? 404 : 503);
+            throw new SupabaseStorageException('Supabase Storage rejected the request.', $safeStatus);
         }
 
         if ($responseBody === '') {

@@ -102,6 +102,36 @@ final class FirestoreClient
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    public function getApplication(string $uid, string $firebaseIdToken): ?array
+    {
+        return $this->getDocument('applications/' . rawurlencode($uid), $firebaseIdToken);
+    }
+
+    /**
+     * @param array{fullName: string, phone: string, storeAddress: string, uid: string, nationalIdPath: string, commercialRegisterPath: string, taxCardPath: string, goldLicensePath: string, status: string, submittedAt: string} $application
+     */
+    public function createApplication(string $uid, string $firebaseIdToken, array $application): void
+    {
+        if ($uid === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore application request is invalid.');
+        }
+
+        $fields = [];
+        foreach ($application as $name => $value) {
+            $fields[$name] = ['stringValue' => $value];
+        }
+
+        $this->request(
+            'POST',
+            'databases/(default)/documents/applications?documentId=' . rawurlencode($uid),
+            $firebaseIdToken,
+            ['fields' => $fields]
+        );
+    }
+
+    /**
      * Creates users/{uid} using the existing Firestore Security Rules schema.
      *
      * @param array{name: string, email: string, phone: string, uid: string, createdAt: string} $profile
@@ -124,6 +154,52 @@ final class FirestoreClient
             $firebaseIdToken,
             ['fields' => $fields]
         );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function getDocument(string $documentPath, string $firebaseIdToken): ?array
+    {
+        $handle = curl_init(self::API_BASE_URL . rawurlencode($this->projectId) . '/databases/(default)/documents/' . $documentPath);
+
+        if ($handle === false) {
+            throw new FirestoreException('Unable to initialize the Firestore request.');
+        }
+
+        curl_setopt_array($handle, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_HTTPHEADER => ['Accept: application/json', 'Authorization: Bearer ' . $firebaseIdToken],
+            CURLOPT_CONNECTTIMEOUT => $this->timeoutSeconds,
+            CURLOPT_TIMEOUT => $this->timeoutSeconds,
+        ]);
+
+        $responseBody = curl_exec($handle);
+        $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+        curl_close($handle);
+
+        if ($responseBody === false) {
+            throw new FirestoreException('Firestore is temporarily unavailable.', 503);
+        }
+        if ($httpStatus === 404) {
+            return null;
+        }
+        if ($httpStatus === 401 || $httpStatus === 403) {
+            throw new FirestoreException('Firestore access was denied.', 403);
+        }
+        if ($httpStatus < 200 || $httpStatus >= 300) {
+            throw new FirestoreException('Firestore is temporarily unavailable.', 503);
+        }
+
+        try {
+            $document = json_decode($responseBody, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new FirestoreException('Firestore returned an invalid response.', 503, $exception);
+        }
+
+        return is_array($document) ? $document : null;
     }
 
     /**

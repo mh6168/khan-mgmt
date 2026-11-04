@@ -97,6 +97,43 @@ createdAt: string
 
 Login reads this profile using the verified ID token. Supported temporary onboarding statuses are `not_started`, `draft`, `submitted`, `under_review`, `approved`, and `rejected`. After login, the verified Firebase UID is used to read `users/{uid}` and route by `onboardingStatus`: a missing profile, `not_started`, or `draft` goes to the application page; `submitted` or `under_review` goes to the pending page; `approved` goes to the dashboard; and `rejected` goes to the rejected page. Each jeweler page verifies the Firebase ID token stored in the server-side PHP session before rendering. Roles are not accepted from the browser and are not assigned by signup.
 
+The application form is available at `/jeweler/application` only when `applications/{uid}` does not exist. It stores one application document at `applications/{uid}` with `pending` status, the verified UID, application details, and private Supabase Storage object paths. The four required documents are uploaded below `{uid}/` in the private `jeweler-documents` bucket.
+
+Firestore rules must also allow the authenticated user to create and read only their own application document:
+
+```text
+applications/{userId}
+  fullName
+  phone
+  storeAddress
+  uid
+  nationalIdPath
+  commercialRegisterPath
+  taxCardPath
+  goldLicensePath
+  status
+  submittedAt
+```
+
+The corresponding Firestore rules can be added alongside the existing `users` rules:
+
+```javascript
+match /applications/{userId} {
+  allow create: if request.auth != null
+    && request.auth.uid == userId
+    && request.resource.data.uid == request.auth.uid
+    && request.resource.data.status == 'pending'
+    && request.resource.data.keys().hasOnly([
+      'fullName', 'phone', 'storeAddress', 'uid',
+      'nationalIdPath', 'commercialRegisterPath',
+      'taxCardPath', 'goldLicensePath', 'status', 'submittedAt'
+    ]);
+  allow get: if request.auth != null && request.auth.uid == userId;
+  allow update: if false;
+  allow delete: if false;
+}
+```
+
 Never put Firebase service-account credentials, private keys, Supabase service-role keys, uploaded documents, or production secrets in the repository or under `public/`. Store them in protected server environment configuration or an approved secret manager.
 
 ## Tests and checks

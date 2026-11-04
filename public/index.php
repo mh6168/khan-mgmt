@@ -321,8 +321,12 @@ function handleCurrentUserRequest(): never
             $uid = verifiedUid($claims);
             $firestore = new FirestoreClient(requireProjectId(), $timeoutSeconds);
             $profile = $firestore->getUserProfile($uid, $token);
+            $application = $firestore->getApplication($uid, $token);
             establishSession($token, $claims);
-            header('Location: ' . applicationUrl(jewelerDestination(is_array($profile) ? profileStatus($profile) : 'not_started')), true, 303);
+            $destination = is_array($application)
+                ? jewelerDestination(applicationStatus($application))
+                : jewelerDestination(is_array($profile) ? profileStatus($profile) : 'not_started');
+            header('Location: ' . applicationUrl($destination), true, 303);
             exit;
         } catch (FirebaseAuthException $exception) {
             renderAuthPage('login', ['errors' => [$exception->getMessage()], 'input' => $input]);
@@ -353,10 +357,146 @@ function handleCurrentUserRequest(): never
     function handleApplicationPage(): never
     {
         $claims = requireAuthenticatedSession();
+        requireFirebaseProfileServices();
+        require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'SupabaseStorageClient.php';
+        $uid = verifiedUid($claims);
+        $token = (string) $_SESSION['firebase_id_token'];
+        $timeout = authenticationTimeout();
+        $firestore = new FirestoreClient(requireProjectId(), $timeout);
+        $application = $firestore->getApplication($uid, $token);
+
+        if ($application !== null) {
+            header('Location: ' . applicationUrl(jewelerDestination(applicationStatus($application))), true, 303);
+            exit;
+        }
+
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+            renderApplicationForm(null);
+        }
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            http_response_code(405);
+            header('Allow: GET, POST');
+            echo 'Method not allowed.';
+            exit;
+        }
+
+        $input = [
+            'fullName' => trim((string) ($_POST['fullName'] ?? '')),
+            'phone' => trim((string) ($_POST['phone'] ?? '')),
+            'storeAddress' => trim((string) ($_POST['storeAddress'] ?? '')),
+        ];
+        $errors = validateApplicationInput($input, $_FILES);
+        if ($errors !== []) {
+            renderApplicationForm(['errors' => $errors, 'input' => $input]);
+        }
+
+        try {
+            $storage = new SupabaseStorageClient(
+                (string) (getenv('SUPABASE_URL') ?: ''),
+                (string) (getenv('SUPABASE_STORAGE_BUCKET') ?: ''),
+                (string) (getenv('SUPABASE_SERVICE_ROLE_KEY') ?: ''),
+                supabaseTimeout()
+            );
+            $storage->ensurePrivateBucket();
+            $paths = [];
+            foreach (applicationDocuments() as $field => $label) {
+                $file = $_FILES[$field];
+                $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string) $file['tmp_name']);
+                $extension = match ($mime) {
+                    'application/pdf' => 'pdf',
+                    'image/jpeg' => 'jpg',
+                    'image/png' => 'png',
+                    default => throw new InvalidArgumentException('An uploaded document type is invalid.'),
+                };
+                $path = $uid . '/' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(8)) . '-' . $field . '.' . $extension;
+                $contents = file_get_contents((string) $file['tmp_name']);
+                if ($contents === false) {
+                    throw new SupabaseStorageException('Unable to read the uploaded ' . $label . ' document.', 400);
+                }
+                $storage->upload($path, $contents, $mime);
+                $paths[$field] = $path;
+            }
+            $firestore->createApplication($uid, $token, [
+                'fullName' => $input['fullName'],
+                'phone' => $input['phone'],
+                'storeAddress' => $input['storeAddress'],
+                'uid' => $uid,
+                'nationalIdPath' => $paths['nationalId'],
+                'commercialRegisterPath' => $paths['commercialRegister'],
+                'taxCardPath' => $paths['taxCard'],
+                'goldLicensePath' => $paths['goldLicense'],
+                'status' => 'pending',
+                'submittedAt' => gmdate('c'),
+            ]);
+            header('Location: ' . applicationUrl('/jeweler/pending'), true, 303);
+            exit;
+        } catch (SupabaseStorageException | FirestoreException | InvalidArgumentException | JsonException $exception) {
+            error_log('Application submission failure: ' . get_class($exception) . '.');
+            renderApplicationForm(['errors' => [isDevelopmentMode() ? signupDiagnosticMessage($exception) : 'The application could not be submitted right now. Please try again.'], 'input' => $input]);
+        } catch (Throwable $exception) {
+            error_log('Unexpected application submission failure: ' . get_class($exception) . '.');
+            renderApplicationForm(['errors' => ['The application could not be submitted right now. Please try again.'], 'input' => $input]);
+        }
+    }
+
+    function renderApplicationForm(?array $state): never
+    {
+        $state = is_array($state) ? $state : [];
+        $errors = is_array($state['errors'] ?? null) ? $state['errors'] : [];
+        $input = is_array($state['input'] ?? null) ? $state['input'] : [];
+        $errorMarkup = $errors === [] ? '' : '<div class="errors"><ul><li>' . implode('</li><li>', array_map('escapeHtml', array_map('strval', $errors))) . '</li></ul></div>';
+        $fields = [
+            'nationalId' => 'بطاقة الرقم القومي',
+            'commercialRegister' => 'السجل التجاري',
+            'taxCard' => 'البطاقة الضريبية',
+            'goldLicense' => 'ترخيص مزاولة مهنة تجارة الذهب والمعادن الثمينة',
+        ];
+        $fileMarkup = '';
+        foreach ($fields as $name => $label) {
+            $fileMarkup .= '<label>' . escapeHtml($label) . '<input type="file" name="' . $name . '" required accept=".pdf,.jpg,.jpeg,.png"></label>';
+        }
         header('Content-Type: text/html; charset=utf-8');
-        $email = is_string($claims['email'] ?? null) ? $claims['email'] : '';
-        echo jewelerPage('KHAN Jeweler Application', 'Your application starts here.', 'Welcome' . ($email !== '' ? ', ' . escapeHtml($email) : '') . '. The jeweler application form will be added in the next stage.');
+        echo '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KHAN Jeweler Application</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>Jeweler Application</h1><p class="muted">Complete your application and upload each required document. Maximum file size: 5 MB.</p>' . $errorMarkup . '<form method="post" enctype="multipart/form-data"><label>Full legal name<input name="fullName" required maxlength="200" value="' . escapeHtml((string) ($input['fullName'] ?? '')) . '"></label><label>Phone number<input name="phone" required value="' . escapeHtml((string) ($input['phone'] ?? '')) . '"></label><label>Store location/address<textarea name="storeAddress" required maxlength="500">' . escapeHtml((string) ($input['storeAddress'] ?? '')) . '</textarea></label>' . $fileMarkup . '<button class="button" type="submit">Submit application</button></form><p class="switch"><a href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Sign out</a></p></main></body></html>';
         exit;
+    }
+
+    function validateApplicationInput(array $input, array $files): array
+    {
+        $errors = [];
+        if ($input['fullName'] === '' || strlen($input['fullName']) > 200) $errors[] = 'Full legal name is required.';
+        if (!preg_match('/^\+?[1-9][0-9 ()-]{6,24}$/', $input['phone'])) $errors[] = 'Enter a valid phone number.';
+        if ($input['storeAddress'] === '' || strlen($input['storeAddress']) > 500) $errors[] = 'Store location/address is required.';
+        foreach (applicationDocuments() as $field => $label) {
+            $file = $files[$field] ?? null;
+            if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errors[] = $label . ' is required.';
+                continue;
+            }
+            if ((int) ($file['size'] ?? 0) > 5 * 1024 * 1024) $errors[] = $label . ' must be 5 MB or smaller.';
+            $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string) ($file['tmp_name'] ?? ''));
+            if (!in_array($mime, ['application/pdf', 'image/jpeg', 'image/png'], true)) $errors[] = $label . ' must be a PDF, JPG, JPEG, or PNG file.';
+        }
+        return $errors;
+    }
+
+    function applicationDocuments(): array
+    {
+        return ['nationalId' => 'بطاقة الرقم القومي', 'commercialRegister' => 'السجل التجاري', 'taxCard' => 'البطاقة الضريبية', 'goldLicense' => 'ترخيص مزاولة المهنة'];
+    }
+
+    function applicationStatus(array $document): string
+    {
+        $status = $document['fields']['status']['stringValue'] ?? 'pending';
+        return is_string($status) && in_array($status, ['pending', 'approved', 'rejected'], true)
+            ? $status
+            : 'pending';
+    }
+
+    function supabaseTimeout(): int
+    {
+        $value = filter_var(getenv('SUPABASE_TIMEOUT_SECONDS') ?: '10', FILTER_VALIDATE_INT);
+        if ($value === false) throw new InvalidArgumentException('Supabase timeout is invalid.');
+        return $value;
     }
 
     function handleJewelerStatusPage(string $status): never
@@ -665,7 +805,7 @@ function handleCurrentUserRequest(): never
     function jewelerDestination(string $status): string
     {
         return match ($status) {
-            'submitted', 'under_review' => '/jeweler/pending',
+            'pending', 'submitted', 'under_review' => '/jeweler/pending',
             'approved' => '/jeweler/dashboard',
             'rejected' => '/jeweler/rejected',
             default => '/jeweler/application',
