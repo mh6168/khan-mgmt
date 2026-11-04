@@ -444,7 +444,10 @@ function handleCurrentUserRequest(): never
         $state = is_array($state) ? $state : [];
         $errors = is_array($state['errors'] ?? null) ? $state['errors'] : [];
         $input = is_array($state['input'] ?? null) ? $state['input'] : [];
+        $resubmission = ($state['resubmission'] ?? false) === true;
+        $rejectionReason = is_string($state['rejectionReason'] ?? null) ? $state['rejectionReason'] : '';
         $errorMarkup = $errors === [] ? '' : '<div class="errors"><ul><li>' . implode('</li><li>', array_map('escapeHtml', array_map('strval', $errors))) . '</li></ul></div>';
+        $reasonMarkup = $rejectionReason !== '' ? '<div class="errors"><strong>Reason for rejection:</strong><br>' . escapeHtml($rejectionReason) . '</div>' : '';
         $fields = [
             'nationalId' => 'بطاقة الرقم القومي',
             'commercialRegister' => 'السجل التجاري',
@@ -453,14 +456,15 @@ function handleCurrentUserRequest(): never
         ];
         $fileMarkup = '';
         foreach ($fields as $name => $label) {
-            $fileMarkup .= '<label>' . escapeHtml($label) . '<input type="file" name="' . $name . '" required accept=".pdf,.jpg,.jpeg,.png"></label>';
+            $required = $resubmission ? '' : ' required';
+            $fileMarkup .= '<label>' . escapeHtml($label) . ($resubmission ? ' (leave empty to keep the current document)' : '') . '<input type="file" name="' . $name . '"' . $required . ' accept=".pdf,.jpg,.jpeg,.png"></label>';
         }
         header('Content-Type: text/html; charset=utf-8');
-        echo '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KHAN Jeweler Application</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>Jeweler Application</h1><p class="muted">Complete your application and upload each required document. Maximum file size: 5 MB.</p>' . $errorMarkup . '<form method="post" enctype="multipart/form-data"><label>Full legal name<input name="fullName" required maxlength="200" value="' . escapeHtml((string) ($input['fullName'] ?? '')) . '"></label><label>Phone number<input name="phone" required value="' . escapeHtml((string) ($input['phone'] ?? '')) . '"></label><label>Store location/address<textarea name="storeAddress" required maxlength="500">' . escapeHtml((string) ($input['storeAddress'] ?? '')) . '</textarea></label>' . $fileMarkup . '<button class="button" type="submit">Submit application</button></form><p class="switch"><a href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Sign out</a></p></main></body></html>';
+        echo '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KHAN Jeweler Application</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>' . ($resubmission ? 'Resubmit Jeweler Application' : 'Jeweler Application') . '</h1><p class="muted">Complete your application and upload each required document. Maximum file size: 5 MB.</p>' . $reasonMarkup . $errorMarkup . '<form method="post" enctype="multipart/form-data"><label>Full legal name<input name="fullName" required maxlength="200" value="' . escapeHtml((string) ($input['fullName'] ?? '')) . '"></label><label>Phone number<input name="phone" required value="' . escapeHtml((string) ($input['phone'] ?? '')) . '"></label><label>Store location/address<textarea name="storeAddress" required maxlength="500">' . escapeHtml((string) ($input['storeAddress'] ?? '')) . '</textarea></label>' . $fileMarkup . '<button class="button" type="submit">' . ($resubmission ? 'Resubmit application' : 'Submit application') . '</button></form><p class="switch"><a href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Sign out</a></p></main></body></html>';
         exit;
     }
 
-    function validateApplicationInput(array $input, array $files): array
+    function validateApplicationInput(array $input, array $files, bool $requireDocuments = true): array
     {
         $errors = [];
         if ($input['fullName'] === '' || strlen($input['fullName']) > 200) $errors[] = 'Full legal name is required.';
@@ -468,11 +472,18 @@ function handleCurrentUserRequest(): never
         if ($input['storeAddress'] === '' || strlen($input['storeAddress']) > 500) $errors[] = 'Store location/address is required.';
         foreach (applicationDocuments() as $field => $label) {
             $file = $files[$field] ?? null;
-            if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                if (!$requireDocuments) {
+                    continue;
+                }
                 $errors[] = $label . ' is required.';
                 continue;
             }
             if ((int) ($file['size'] ?? 0) > 5 * 1024 * 1024) $errors[] = $label . ' must be 5 MB or smaller.';
+            if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errors[] = $label . ' could not be uploaded.';
+                continue;
+            }
             $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string) ($file['tmp_name'] ?? ''));
             if (!in_array($mime, ['application/pdf', 'image/jpeg', 'image/png'], true)) $errors[] = $label . ' must be a PDF, JPG, JPEG, or PNG file.';
         }
@@ -492,6 +503,30 @@ function handleCurrentUserRequest(): never
             : 'pending';
     }
 
+    function applicationInput(array $document): array
+    {
+        return [
+            'fullName' => (string) ($document['fields']['fullName']['stringValue'] ?? ''),
+            'phone' => (string) ($document['fields']['phone']['stringValue'] ?? ''),
+            'storeAddress' => (string) ($document['fields']['storeAddress']['stringValue'] ?? ''),
+        ];
+    }
+
+    function applicationPaths(array $document): array
+    {
+        return [
+            'nationalId' => (string) ($document['fields']['nationalIdPath']['stringValue'] ?? ''),
+            'commercialRegister' => (string) ($document['fields']['commercialRegisterPath']['stringValue'] ?? ''),
+            'taxCard' => (string) ($document['fields']['taxCardPath']['stringValue'] ?? ''),
+            'goldLicense' => (string) ($document['fields']['goldLicensePath']['stringValue'] ?? ''),
+        ];
+    }
+
+    function applicationRejectionReason(array $document): string
+    {
+        return (string) ($document['fields']['rejectionReason']['stringValue'] ?? 'No rejection reason was provided.');
+    }
+
     function supabaseTimeout(): int
     {
         $value = filter_var(getenv('SUPABASE_TIMEOUT_SECONDS') ?: '10', FILTER_VALIDATE_INT);
@@ -502,6 +537,10 @@ function handleCurrentUserRequest(): never
     function handleJewelerStatusPage(string $status): never
     {
         $claims = requireAuthenticatedSession();
+
+        if ($status === 'rejected') {
+            handleRejectedApplication($claims);
+        }
 
         if ($status === 'pending') {
             requireFirebaseProfileServices();
@@ -524,6 +563,124 @@ function handleCurrentUserRequest(): never
 
             echo pendingApplicationPage(applicationSubmittedAt($application));
             exit;
+        }
+
+        function handleRejectedApplication(array $claims): never
+        {
+            requireFirebaseProfileServices();
+            require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'SupabaseStorageClient.php';
+            $uid = verifiedUid($claims);
+            $token = (string) ($_SESSION['firebase_id_token'] ?? '');
+            $firestore = new FirestoreClient(requireProjectId(), authenticationTimeout());
+            $application = $firestore->getApplication($uid, $token);
+
+            if ($application === null) {
+                header('Location: ' . applicationUrl('/jeweler/application'), true, 303);
+                exit;
+            }
+
+            $status = applicationStatus($application);
+            if ($status !== 'rejected') {
+                header('Location: ' . applicationUrl(jewelerDestination($status)), true, 303);
+                exit;
+            }
+
+            if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+                renderApplicationForm([
+                    'input' => applicationInput($application),
+                    'rejectionReason' => applicationRejectionReason($application),
+                    'resubmission' => true,
+                ]);
+            }
+
+            if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+                http_response_code(405);
+                header('Allow: GET, POST');
+                echo 'Method not allowed.';
+                exit;
+            }
+
+            $input = applicationPostedInput();
+            $errors = validateApplicationInput($input, $_FILES, false);
+            if ($errors !== []) {
+                renderApplicationForm(['errors' => $errors, 'input' => $input, 'rejectionReason' => applicationRejectionReason($application), 'resubmission' => true]);
+            }
+
+            $storage = null;
+            $newPaths = [];
+            $oldPaths = [];
+
+            try {
+                $storage = new SupabaseStorageClient(
+                    (string) (getenv('SUPABASE_URL') ?: ''),
+                    (string) (getenv('SUPABASE_STORAGE_BUCKET') ?: ''),
+                    (string) (getenv('SUPABASE_SERVICE_ROLE_KEY') ?: ''),
+                    supabaseTimeout()
+                );
+                $storage->ensurePrivateBucket();
+                $paths = applicationPaths($application);
+
+                foreach (applicationDocuments() as $field => $label) {
+                    $file = $_FILES[$field] ?? null;
+                    if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                        continue;
+                    }
+                    $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string) $file['tmp_name']);
+                    $extension = match ($mime) {
+                        'application/pdf' => 'pdf',
+                        'image/jpeg' => 'jpg',
+                        'image/png' => 'png',
+                        default => throw new InvalidArgumentException('An uploaded document type is invalid.'),
+                    };
+                    $path = $uid . '/' . gmdate('YmdHis') . '-' . bin2hex(random_bytes(8)) . '-' . $field . '.' . $extension;
+                    $contents = file_get_contents((string) $file['tmp_name']);
+                    if ($contents === false) {
+                        throw new SupabaseStorageException('Unable to read the uploaded ' . $label . ' document.', 400);
+                    }
+                    $storage->upload($path, $contents, $mime);
+                    $newPaths[] = $path;
+                    $oldPaths[] = $paths[$field];
+                    $paths[$field] = $path;
+                }
+
+                $updatedApplication = [
+                    'fullName' => $input['fullName'],
+                    'phone' => $input['phone'],
+                    'storeAddress' => $input['storeAddress'],
+                    'uid' => $uid,
+                    'nationalIdPath' => $paths['nationalId'],
+                    'commercialRegisterPath' => $paths['commercialRegister'],
+                    'taxCardPath' => $paths['taxCard'],
+                    'goldLicensePath' => $paths['goldLicense'],
+                    'status' => 'pending',
+                    'submittedAt' => gmdate('c'),
+                ];
+                $firestore->updateApplication($uid, $token, $updatedApplication);
+
+                foreach ($oldPaths as $oldPath) {
+                    if ($oldPath !== '' && !in_array($oldPath, $paths, true)) {
+                        try {
+                            $storage->delete($oldPath);
+                        } catch (Throwable $exception) {
+                            error_log('Unable to delete replaced application document: ' . get_class($exception) . '.');
+                        }
+                    }
+                }
+                header('Location: ' . applicationUrl('/jeweler/pending'), true, 303);
+                exit;
+            } catch (Throwable $exception) {
+                foreach ($newPaths as $newPath) {
+                    try {
+                        if ($storage !== null) {
+                            $storage->delete($newPath);
+                        }
+                    } catch (Throwable $cleanupException) {
+                        error_log('Unable to clean up replacement document: ' . get_class($cleanupException) . '.');
+                    }
+                }
+                error_log('Application resubmission failure: ' . get_class($exception) . '.');
+                renderApplicationForm(['errors' => [isDevelopmentMode() ? signupDiagnosticMessage($exception) : 'The application could not be resubmitted right now. Please try again.'], 'input' => $input, 'rejectionReason' => applicationRejectionReason($application), 'resubmission' => true]);
+            }
         }
 
         $pages = [

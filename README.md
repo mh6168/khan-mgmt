@@ -131,10 +131,20 @@ match /applications/{userId} {
       'taxCardPath', 'goldLicensePath', 'status', 'submittedAt'
     ]);
   allow get: if request.auth != null && request.auth.uid == userId;
-  allow update: if false;
+  allow update: if request.auth != null
+    && request.auth.uid == userId
+    && request.resource.data.uid == resource.data.uid
+    && request.resource.data.status == 'pending'
+    && request.resource.data.keys().hasOnly([
+      'fullName', 'phone', 'storeAddress', 'uid',
+      'nationalIdPath', 'commercialRegisterPath',
+      'taxCardPath', 'goldLicensePath', 'status', 'submittedAt'
+    ]);
   allow delete: if false;
 }
 ```
+
+To display a rejection reason, include `rejectionReason` in the application document and add it to the allowed application fields in the rules. The resubmission update does not let the browser change `uid`; the backend uses the verified session UID.
 
 Never put Firebase service-account credentials, private keys, Supabase service-role keys, uploaded documents, or production secrets in the repository or under `public/`. Store them in protected server environment configuration or an approved secret manager.
 

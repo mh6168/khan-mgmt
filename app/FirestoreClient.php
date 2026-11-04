@@ -132,6 +132,28 @@ final class FirestoreClient
     }
 
     /**
+     * @param array{fullName: string, phone: string, storeAddress: string, uid: string, nationalIdPath: string, commercialRegisterPath: string, taxCardPath: string, goldLicensePath: string, status: string, submittedAt: string} $application
+     */
+    public function updateApplication(string $uid, string $firebaseIdToken, array $application): void
+    {
+        if ($uid === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore application request is invalid.');
+        }
+
+        $fields = [];
+        foreach ($application as $name => $value) {
+            $fields[$name] = ['stringValue' => $value];
+        }
+
+        $this->request(
+            'PATCH',
+            'databases/(default)/documents/applications/' . rawurlencode($uid),
+            $firebaseIdToken,
+            ['fields' => $fields]
+        );
+    }
+
+    /**
      * Creates users/{uid} using the existing Firestore Security Rules schema.
      *
      * @param array{name: string, email: string, phone: string, uid: string, createdAt: string} $profile

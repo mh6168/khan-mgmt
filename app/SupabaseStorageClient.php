@@ -88,6 +88,17 @@ final class SupabaseStorageClient
         );
     }
 
+    public function delete(string $path): void
+    {
+        $this->validateObjectPath($path);
+        $this->request(
+            'POST',
+            '/storage/v1/object/remove/' . rawurlencode($this->bucket),
+            json_encode(['prefixes' => [$path]], JSON_THROW_ON_ERROR),
+            'application/json'
+        );
+    }
+
     public function createSignedUrl(string $path, int $expiresInSeconds = 600): string
     {
         $this->validateObjectPath($path);
