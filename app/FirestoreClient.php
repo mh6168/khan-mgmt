@@ -102,9 +102,9 @@ final class FirestoreClient
     }
 
     /**
-     * Creates users/{uid} with the minimal Stage 6 profile schema.
+     * Creates users/{uid} with the minimal jeweler profile schema.
      *
-     * @param array{firstName: string, lastName: string, phoneNumber: string, email: string, onboardingStatus: string} $profile
+     * @param array{fullName: string, phoneNumber: string, email: string, onboardingStatus: string} $profile
      */
     public function createUserProfile(string $uid, string $firebaseIdToken, array $profile): void
     {

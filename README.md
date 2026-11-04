@@ -60,8 +60,10 @@ The current XAMPP PHP installation includes the baseline extensions needed by th
 
    - `/` — welcome response
    - `/health` — health response
-   - `/signup` — signup form for legal name, phone, email, password, and confirmation
+   - `/signup` — jeweler registration form for full name, phone, email, password, and confirmation
    - `/login` — login form
+   - `/public/signup.php` — dedicated signup page entry point
+   - `/public/login.php` — dedicated login page entry point
    - `POST /auth/signup` — JSON email/password Firebase account creation
    - `POST /auth/login` — JSON email/password sign-in
    - `GET /auth/me` — returns the UID from a successfully verified Firebase ID token
@@ -83,8 +85,7 @@ Firestore REST access uses the verified Firebase ID token, not a service-account
 Signup creates the following Firestore document at `users/{uid}`, where `{uid}` is returned by Firebase Authentication and verified server-side:
 
 ```text
-firstName: string
-lastName: string
+fullName: string
 phoneNumber: string
 email: string
 onboardingStatus: "not_started"

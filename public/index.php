@@ -25,6 +25,14 @@ if (!is_file($firebaseAuthClientFile)) {
 require_once $firebaseAuthClientFile;
 
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$entryPoint = basename(str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? '')));
+
+if ($entryPoint === 'signup.php') {
+    $path = '/signup';
+} elseif ($entryPoint === 'login.php') {
+    $path = '/login';
+}
+
 $basePath = applicationBasePath();
 
 if ($basePath !== '' && str_starts_with($path, $basePath)) {
@@ -245,14 +253,12 @@ function handleCurrentUserRequest(): never
             $verifiedEmail = verifiedEmail($claims);
             $firestore = new FirestoreClient(requireProjectId(), $timeoutSeconds);
             $firestore->createUserProfile($uid, $token, [
-                'firstName' => $input['firstName'],
-                'lastName' => $input['lastName'],
+                'fullName' => $input['fullName'],
                 'phoneNumber' => $input['phoneNumber'],
                 'email' => $verifiedEmail,
                 'onboardingStatus' => 'not_started',
             ]);
-            establishSession($token, $claims);
-            header('Location: ' . applicationUrl('/jeweler/application'), true, 303);
+            header('Location: ' . applicationUrl('/login?registered=1'), true, 303);
             exit;
         } catch (FirebaseAuthException | FirebaseTokenVerificationException | FirebaseKeyFetchException | FirestoreException $exception) {
             error_log(signupFailureLog($exception));
@@ -269,7 +275,9 @@ function handleCurrentUserRequest(): never
     function handleLoginPage(): never
     {
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
-            renderAuthPage('login', null);
+            renderAuthPage('login', isset($_GET['registered']) && $_GET['registered'] === '1'
+                ? ['success' => 'Registration successful. You can now sign in.']
+                : null);
         }
 
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
@@ -340,8 +348,7 @@ function handleCurrentUserRequest(): never
     function readFormInput(): array
     {
         return [
-            'firstName' => trim((string) ($_POST['firstName'] ?? '')),
-            'lastName' => trim((string) ($_POST['lastName'] ?? '')),
+            'fullName' => trim((string) ($_POST['fullName'] ?? '')),
             'phoneNumber' => trim((string) ($_POST['phoneNumber'] ?? '')),
             'email' => strtolower(trim((string) ($_POST['email'] ?? ''))),
             'password' => (string) ($_POST['password'] ?? ''),
@@ -356,10 +363,8 @@ function handleCurrentUserRequest(): never
     function validateSignupInput(array $input): array
     {
         $errors = [];
-        foreach (['firstName' => 'Legal first name', 'lastName' => 'Legal last name'] as $field => $label) {
-            if ($input[$field] === '' || strlen($input[$field]) > 100) {
-                $errors[] = $label . ' is required and must be 100 characters or fewer.';
-            }
+        if ($input['fullName'] === '' || strlen($input['fullName']) > 200) {
+            $errors[] = 'Full name is required and must be 200 characters or fewer.';
         }
         if (!preg_match('/^\+?[1-9][0-9 ()-]{6,24}$/', $input['phoneNumber'])) {
             $errors[] = 'Enter a valid phone number.';
@@ -418,6 +423,10 @@ function handleCurrentUserRequest(): never
 
     function signupFailureMessage(Throwable $exception): string
     {
+        if ($exception instanceof FirebaseAuthException) {
+            return $exception->getMessage();
+        }
+
         return isDevelopmentMode()
             ? signupDiagnosticMessage($exception)
             : 'The account could not be created right now. Please try again.';
@@ -537,11 +546,12 @@ function handleCurrentUserRequest(): never
         $isSignup = $mode === 'signup';
         $input = is_array($state['input'] ?? null) ? $state['input'] : [];
         $errors = is_array($state['errors'] ?? null) ? $state['errors'] : [];
+        $success = is_string($state['success'] ?? null) ? $state['success'] : '';
         header('Content-Type: text/html; charset=utf-8');
         $title = $isSignup ? 'Create your KHAN account' : 'Welcome back to KHAN';
         $action = applicationUrl($isSignup ? '/signup' : '/login');
         $fields = $isSignup
-            ? '<div class="grid"><label>Legal first name<input name="firstName" required maxlength="100" value="' . escapeHtml((string) ($input['firstName'] ?? '')) . '"></label><label>Legal last name<input name="lastName" required maxlength="100" value="' . escapeHtml((string) ($input['lastName'] ?? '')) . '"></label></div><label>Phone number<input name="phoneNumber" required autocomplete="tel" value="' . escapeHtml((string) ($input['phoneNumber'] ?? '')) . '"></label>'
+            ? '<label>Full name<input name="fullName" required maxlength="200" autocomplete="name" value="' . escapeHtml((string) ($input['fullName'] ?? '')) . '"></label><label>Phone number<input name="phoneNumber" required autocomplete="tel" value="' . escapeHtml((string) ($input['phoneNumber'] ?? '')) . '"></label>'
             : '';
         $confirm = $isSignup ? '<label>Confirm password<input type="password" name="passwordConfirmation" required autocomplete="new-password"></label>' : '';
         $errorMarkup = '';
@@ -552,10 +562,11 @@ function handleCurrentUserRequest(): never
             }
             $errorMarkup .= '</ul></div>';
         }
+        $successMarkup = $success !== '' ? '<div class="success">' . escapeHtml($success) . '</div>' : '';
         $switch = $isSignup
             ? 'Already have an account? <a href="' . escapeHtml(applicationUrl('/login')) . '">Sign in</a>'
             : 'New to KHAN? <a href="' . escapeHtml(applicationUrl('/signup')) . '">Create an account</a>';
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . escapeHtml($title) . '</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>' . escapeHtml($title) . '</h1><p class="muted">' . ($isSignup ? 'Build your profile and begin your jeweler application.' : 'Sign in securely to continue your journey.') . '</p>' . $errorMarkup . '<form method="post" action="' . escapeHtml($action) . '" novalidate>' . $fields . '<label>Email address<input type="email" name="email" required autocomplete="email" value="' . escapeHtml((string) ($input['email'] ?? '')) . '"></label><label>Password<input type="password" name="password" required autocomplete="' . ($isSignup ? 'new-password' : 'current-password') . '"></label>' . $confirm . '<button class="button" type="submit">' . ($isSignup ? 'Create account' : 'Sign in') . '</button></form><p class="switch">' . $switch . '</p></main></body></html>';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . escapeHtml($title) . '</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>' . escapeHtml($title) . '</h1><p class="muted">' . ($isSignup ? 'Build your profile and begin your jeweler application.' : 'Sign in securely to continue your journey.') . '</p>' . $successMarkup . $errorMarkup . '<form method="post" action="' . escapeHtml($action) . '" novalidate>' . $fields . '<label>Email address<input type="email" name="email" required autocomplete="email" value="' . escapeHtml((string) ($input['email'] ?? '')) . '"></label><label>Password<input type="password" name="password" required autocomplete="' . ($isSignup ? 'new-password' : 'current-password') . '"></label>' . $confirm . '<button class="button" type="submit">' . ($isSignup ? 'Create account' : 'Sign in') . '</button></form><p class="switch">' . $switch . '</p></main></body></html>';
         exit;
     }
 
@@ -567,7 +578,7 @@ function handleCurrentUserRequest(): never
     function authStyles(): string
     {
         return '
-    :root{color-scheme:dark;--bg:#11100f;--panel:#1b1916;--gold:#d8aa4b;--muted:#b9b1a3;font-family:Inter,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#2b2417,#11100f 55%);color:#f8f2e7}.card{width:min(100%,560px);padding:clamp(28px,6vw,56px);background:rgba(27,25,22,.96);border:1px solid rgba(216,170,75,.35);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.4)}.eyebrow{color:var(--gold);letter-spacing:.18em;font-size:.75rem;font-weight:700}h1{font-family:Georgia,serif;font-weight:500;font-size:clamp(2rem,6vw,3.2rem);margin:.5rem 0 1rem}.muted{color:var(--muted);line-height:1.6}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:560px){.grid{grid-template-columns:1fr}}label{display:block;color:#e8dfd1;font-size:.9rem;margin:18px 0 0}input{display:block;width:100%;margin-top:8px;padding:13px 14px;border:1px solid #55462f;border-radius:8px;background:#121110;color:#fff;font-size:1rem}input:focus{outline:2px solid var(--gold);outline-offset:1px}.button{display:inline-block;width:100%;margin-top:24px;padding:14px;border:0;border-radius:8px;background:var(--gold);color:#1a140b;font-weight:700;font-size:1rem;cursor:pointer}.errors{margin:18px 0;padding:12px 16px;border:1px solid #a34a42;border-radius:8px;background:#3a1c1b;color:#ffd9d4}.errors ul{margin:0;padding-left:18px}.switch{text-align:center;color:var(--muted);margin:24px 0 0}.switch a,.button{color:#1a140b}.switch a{color:var(--gold)}';
+    :root{color-scheme:dark;--bg:#11100f;--panel:#1b1916;--gold:#d8aa4b;--muted:#b9b1a3;font-family:Inter,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#2b2417,#11100f 55%);color:#f8f2e7}.card{width:min(100%,560px);padding:clamp(28px,6vw,56px);background:rgba(27,25,22,.96);border:1px solid rgba(216,170,75,.35);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.4)}.eyebrow{color:var(--gold);letter-spacing:.18em;font-size:.75rem;font-weight:700}h1{font-family:Georgia,serif;font-weight:500;font-size:clamp(2rem,6vw,3.2rem);margin:.5rem 0 1rem}.muted{color:var(--muted);line-height:1.6}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:560px){.grid{grid-template-columns:1fr}}label{display:block;color:#e8dfd1;font-size:.9rem;margin:18px 0 0}input{display:block;width:100%;margin-top:8px;padding:13px 14px;border:1px solid #55462f;border-radius:8px;background:#121110;color:#fff;font-size:1rem}input:focus{outline:2px solid var(--gold);outline-offset:1px}.button{display:inline-block;width:100%;margin-top:24px;padding:14px;border:0;border-radius:8px;background:var(--gold);color:#1a140b;font-weight:700;font-size:1rem;cursor:pointer}.errors{margin:18px 0;padding:12px 16px;border:1px solid #a34a42;border-radius:8px;background:#3a1c1b;color:#ffd9d4}.errors ul{margin:0;padding-left:18px}.success{margin:18px 0;padding:12px 16px;border:1px solid #5d8a62;border-radius:8px;background:#1d3821;color:#d9f3dc}.errors ul{margin:0;padding-left:18px}.switch{text-align:center;color:var(--muted);margin:24px 0 0}.switch a,.button{color:#1a140b}.switch a{color:var(--gold)}';
     }
 
     /**
