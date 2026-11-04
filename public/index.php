@@ -501,14 +501,32 @@ function handleCurrentUserRequest(): never
 
     function handleJewelerStatusPage(string $status): never
     {
-        requireAuthenticatedSession();
+        $claims = requireAuthenticatedSession();
+
+        if ($status === 'pending') {
+            requireFirebaseProfileServices();
+            $uid = verifiedUid($claims);
+            $token = (string) ($_SESSION['firebase_id_token'] ?? '');
+            $firestore = new FirestoreClient(requireProjectId(), authenticationTimeout());
+            $application = $firestore->getApplication($uid, $token);
+
+            if ($application === null) {
+                header('Location: ' . applicationUrl('/jeweler/application'), true, 303);
+                exit;
+            }
+
+            $actualStatus = applicationStatus($application);
+
+            if ($actualStatus !== 'pending') {
+                header('Location: ' . applicationUrl(jewelerDestination($actualStatus)), true, 303);
+                exit;
+            }
+
+            echo pendingApplicationPage(applicationSubmittedAt($application));
+            exit;
+        }
 
         $pages = [
-            'pending' => [
-                'title' => 'Application Pending',
-                'heading' => 'Your application is under review.',
-                'message' => 'KHAN Jeweler Management will update your application when the review is complete.',
-            ],
             'approved' => [
                 'title' => 'Jeweler Dashboard',
                 'heading' => 'Welcome to your jeweler dashboard.',
@@ -524,6 +542,26 @@ function handleCurrentUserRequest(): never
         $page = $pages[$status] ?? $pages['pending'];
         echo jewelerPage($page['title'], $page['heading'], $page['message']);
         exit;
+    }
+
+    function pendingApplicationPage(string $submittedAt): string
+    {
+        return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Application Pending</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>Your application is pending</h1><p class="muted">Your application has been submitted successfully!</p><p class="muted">Thank you for your interest in joining Khan. Our administration team is currently reviewing your information and documents.</p><p class="muted">You will be able to access your jeweler dashboard once your application is approved.</p><p class="muted"><strong>Submitted on:</strong> ' . escapeHtml($submittedAt) . '</p><a class="button" href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Log out</a></main></body></html>';
+    }
+
+    function applicationSubmittedAt(array $document): string
+    {
+        $value = $document['fields']['submittedAt']['stringValue'] ?? '';
+
+        if (!is_string($value) || $value === '') {
+            return 'Date unavailable';
+        }
+
+        try {
+            return (new DateTimeImmutable($value))->format('F j, Y \a\t g:i A');
+        } catch (Exception) {
+            return 'Date unavailable';
+        }
     }
 
     function jewelerPage(string $title, string $heading, string $message): string

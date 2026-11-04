@@ -99,6 +99,8 @@ Login reads this profile using the verified ID token. Supported temporary onboar
 
 The application form is available at `/jeweler/application` only when `applications/{uid}` does not exist. It stores one application document at `applications/{uid}` with `pending` status, the verified UID, application details, and private Supabase Storage object paths. The four required documents are uploaded below `{uid}/` in the private `jeweler-documents` bucket.
 
+The pending page reads `applications/{uid}` on every access. A missing application redirects to the application form; `approved` redirects to the dashboard; `rejected` redirects to the rejected page; and `pending` displays the success message and stored submission date. This also prevents an already-submitted jeweler from submitting a second application.
+
 Firestore rules must also allow the authenticated user to create and read only their own application document:
 
 ```text
