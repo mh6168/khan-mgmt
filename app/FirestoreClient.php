@@ -102,9 +102,9 @@ final class FirestoreClient
     }
 
     /**
-     * Creates users/{uid} with the minimal jeweler profile schema.
+     * Creates users/{uid} using the existing Firestore Security Rules schema.
      *
-     * @param array{fullName: string, phoneNumber: string, email: string, onboardingStatus: string} $profile
+     * @param array{name: string, email: string, phone: string, uid: string, createdAt: string} $profile
      */
     public function createUserProfile(string $uid, string $firebaseIdToken, array $profile): void
     {

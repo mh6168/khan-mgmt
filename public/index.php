@@ -259,6 +259,7 @@ function handleCurrentUserRequest(): never
 
         try {
             requireFirebaseConfiguration();
+            requireFirebaseProfileServices();
             $timeoutSeconds = authenticationTimeout();
             $client = new FirebaseAuthClient((string) (getenv('FIREBASE_WEB_API_KEY') ?: ''), $timeoutSeconds);
             $result = $client->signUp($input['email'], $input['password']);
@@ -268,10 +269,11 @@ function handleCurrentUserRequest(): never
             $verifiedEmail = verifiedEmail($claims);
             $firestore = new FirestoreClient(requireProjectId(), $timeoutSeconds);
             $firestore->createUserProfile($uid, $token, [
-                'fullName' => $input['fullName'],
-                'phoneNumber' => $input['phoneNumber'],
+                'name' => $input['fullName'],
                 'email' => $verifiedEmail,
-                'onboardingStatus' => 'not_started',
+                'phone' => $input['phoneNumber'],
+                'uid' => $uid,
+                'createdAt' => gmdate('c'),
             ]);
             header('Location: ' . applicationUrl('/login?registered=1'), true, 303);
             exit;
@@ -310,6 +312,7 @@ function handleCurrentUserRequest(): never
 
         try {
             requireFirebaseConfiguration();
+            requireFirebaseProfileServices();
             $timeoutSeconds = authenticationTimeout();
             $client = new FirebaseAuthClient((string) (getenv('FIREBASE_WEB_API_KEY') ?: ''), $timeoutSeconds);
             $result = $client->signIn($input['email'], $input['password']);
@@ -523,11 +526,32 @@ function handleCurrentUserRequest(): never
 
     function verifierForCurrentRequest(int $timeoutSeconds): FirebaseIdTokenVerifier
     {
+        $verifierFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirebaseIdTokenVerifier.php';
+
+        if (!is_file($verifierFile)) {
+            throw new InvalidArgumentException('Firebase token verifier is unavailable.');
+        }
+
+        require_once $verifierFile;
+
         return new FirebaseIdTokenVerifier(
             requireProjectId(),
             dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'firebase-public-keys.json',
             $timeoutSeconds
         );
+    }
+
+    function requireFirebaseProfileServices(): void
+    {
+        $verifierFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirebaseIdTokenVerifier.php';
+        $firestoreFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirestoreClient.php';
+
+        if (!is_file($verifierFile) || !is_file($firestoreFile)) {
+            throw new InvalidArgumentException('Firebase profile services are unavailable.');
+        }
+
+        require_once $verifierFile;
+        require_once $firestoreFile;
     }
 
     /**

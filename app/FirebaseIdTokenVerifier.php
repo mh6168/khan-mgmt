@@ -300,6 +300,7 @@ final class FirebaseIdTokenVerifier
     {
         $offset = 0;
         $this->scanJsonValue($json, $offset);
+        $this->skipJsonWhitespace($json, $offset);
 
         if ($offset !== strlen($json)) {
             throw new InvalidArgumentException('Unexpected JSON content.');

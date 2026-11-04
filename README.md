@@ -88,10 +88,11 @@ Firestore REST access uses the verified Firebase ID token, not a service-account
 Signup creates the following Firestore document at `users/{uid}`, where `{uid}` is returned by Firebase Authentication and verified server-side:
 
 ```text
-fullName: string
-phoneNumber: string
+name: string
 email: string
-onboardingStatus: "not_started"
+phone: string
+uid: string
+createdAt: string
 ```
 
 Login reads this profile using the verified ID token. Supported temporary onboarding statuses are `not_started`, `draft`, `submitted`, `under_review`, `approved`, and `rejected`. After login, the verified Firebase UID is used to read `users/{uid}` and route by `onboardingStatus`: a missing profile, `not_started`, or `draft` goes to the application page; `submitted` or `under_review` goes to the pending page; `approved` goes to the dashboard; and `rejected` goes to the rejected page. Each jeweler page verifies the Firebase ID token stored in the server-side PHP session before rendering. Roles are not accepted from the browser and are not assigned by signup.
