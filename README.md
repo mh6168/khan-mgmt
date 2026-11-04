@@ -67,7 +67,10 @@ The current XAMPP PHP installation includes the baseline extensions needed by th
    - `POST /auth/signup` — JSON email/password Firebase account creation
    - `POST /auth/login` — JSON email/password sign-in
    - `GET /auth/me` — returns the UID from a successfully verified Firebase ID token
-   - `/jeweler/application` — authenticated placeholder for the next onboarding stage
+   - `/jeweler/application` — authenticated jeweler application placeholder
+   - `/jeweler/pending` — authenticated pending application placeholder
+   - `/jeweler/dashboard` — authenticated approved jeweler dashboard placeholder
+   - `/jeweler/rejected` — authenticated rejected application placeholder
    - `/auth/logout` — destroys the PHP session and redirects to login
 
 The authentication endpoints require a JSON body containing `email` and `password`. They return Firebase's ID token, refresh token, expiry, local UID, and email on success. A missing `FIREBASE_WEB_API_KEY` returns a configuration error without attempting a request.
@@ -91,7 +94,7 @@ email: string
 onboardingStatus: "not_started"
 ```
 
-Login reads this profile using the verified ID token. Supported temporary onboarding statuses are `not_started`, `draft`, `submitted`, `under_review`, `approved`, and `rejected`; they currently route to the placeholder application page. Roles are not accepted from the browser and are not assigned by signup.
+Login reads this profile using the verified ID token. Supported temporary onboarding statuses are `not_started`, `draft`, `submitted`, `under_review`, `approved`, and `rejected`. After login, the verified Firebase UID is used to read `users/{uid}` and route by `onboardingStatus`: a missing profile, `not_started`, or `draft` goes to the application page; `submitted` or `under_review` goes to the pending page; `approved` goes to the dashboard; and `rejected` goes to the rejected page. Each jeweler page verifies the Firebase ID token stored in the server-side PHP session before rendering. Roles are not accepted from the browser and are not assigned by signup.
 
 Never put Firebase service-account credentials, private keys, Supabase service-role keys, uploaded documents, or production secrets in the repository or under `public/`. Store them in protected server environment configuration or an approved secret manager.
 

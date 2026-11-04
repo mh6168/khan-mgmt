@@ -59,6 +59,21 @@ if ($path === '/jeweler/application') {
     exit;
 }
 
+if ($path === '/jeweler/pending') {
+    handleJewelerStatusPage('pending');
+    exit;
+}
+
+if ($path === '/jeweler/dashboard') {
+    handleJewelerStatusPage('approved');
+    exit;
+}
+
+if ($path === '/jeweler/rejected') {
+    handleJewelerStatusPage('rejected');
+    exit;
+}
+
 if ($path === '/auth/signup' || $path === '/auth/login') {
     handleAuthenticationRequest($path);
     exit;
@@ -304,8 +319,7 @@ function handleCurrentUserRequest(): never
             $firestore = new FirestoreClient(requireProjectId(), $timeoutSeconds);
             $profile = $firestore->getUserProfile($uid, $token);
             establishSession($token, $claims);
-            $status = is_array($profile) ? profileStatus($profile) : 'not_started';
-            header('Location: ' . applicationUrl($status === 'not_started' ? '/jeweler/application' : '/jeweler/application'), true, 303);
+            header('Location: ' . applicationUrl(jewelerDestination(is_array($profile) ? profileStatus($profile) : 'not_started')), true, 303);
             exit;
         } catch (FirebaseAuthException $exception) {
             renderAuthPage('login', ['errors' => [$exception->getMessage()], 'input' => $input]);
@@ -338,8 +352,40 @@ function handleCurrentUserRequest(): never
         $claims = requireAuthenticatedSession();
         header('Content-Type: text/html; charset=utf-8');
         $email = is_string($claims['email'] ?? null) ? $claims['email'] : '';
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KHAN Jeweler Application</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>Your application starts here.</h1><p class="muted">Welcome' . ($email !== '' ? ', ' . escapeHtml($email) : '') . '. The jeweler application form will be added in the next stage.</p><a class="button" href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Sign out</a></main></body></html>';
+        echo jewelerPage('KHAN Jeweler Application', 'Your application starts here.', 'Welcome' . ($email !== '' ? ', ' . escapeHtml($email) : '') . '. The jeweler application form will be added in the next stage.');
         exit;
+    }
+
+    function handleJewelerStatusPage(string $status): never
+    {
+        requireAuthenticatedSession();
+
+        $pages = [
+            'pending' => [
+                'title' => 'Application Pending',
+                'heading' => 'Your application is under review.',
+                'message' => 'KHAN Jeweler Management will update your application when the review is complete.',
+            ],
+            'approved' => [
+                'title' => 'Jeweler Dashboard',
+                'heading' => 'Welcome to your jeweler dashboard.',
+                'message' => 'Your jeweler application has been approved. Dashboard tools will be added here.',
+            ],
+            'rejected' => [
+                'title' => 'Application Rejected',
+                'heading' => 'Your application was not approved.',
+                'message' => 'Please contact KHAN Jeweler Management if you need more information about your application.',
+            ],
+        ];
+
+        $page = $pages[$status] ?? $pages['pending'];
+        echo jewelerPage($page['title'], $page['heading'], $page['message']);
+        exit;
+    }
+
+    function jewelerPage(string $title, string $heading, string $message): string
+    {
+        return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . escapeHtml($title) . '</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>' . escapeHtml($heading) . '</h1><p class="muted">' . $message . '</p><a class="button" href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Sign out</a></main></body></html>';
     }
 
     /**
@@ -590,6 +636,16 @@ function handleCurrentUserRequest(): never
         return is_string($status) && in_array($status, ['not_started', 'draft', 'submitted', 'under_review', 'approved', 'rejected'], true)
             ? $status
             : 'not_started';
+    }
+
+    function jewelerDestination(string $status): string
+    {
+        return match ($status) {
+            'submitted', 'under_review' => '/jeweler/pending',
+            'approved' => '/jeweler/dashboard',
+            'rejected' => '/jeweler/rejected',
+            default => '/jeweler/application',
+        };
     }
 
 function handleCurrentUserRequestVerified(): never
