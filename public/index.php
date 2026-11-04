@@ -542,6 +542,10 @@ function handleCurrentUserRequest(): never
             handleRejectedApplication($claims);
         }
 
+        if ($status === 'approved') {
+            handleApprovedDashboard($claims);
+        }
+
         if ($status === 'pending') {
             requireFirebaseProfileServices();
             $uid = verifiedUid($claims);
@@ -552,6 +556,44 @@ function handleCurrentUserRequest(): never
             if ($application === null) {
                 header('Location: ' . applicationUrl('/jeweler/application'), true, 303);
                 exit;
+            }
+
+            function handleApprovedDashboard(array $claims): never
+            {
+                requireFirebaseProfileServices();
+                $uid = verifiedUid($claims);
+                $token = (string) ($_SESSION['firebase_id_token'] ?? '');
+                $firestore = new FirestoreClient(requireProjectId(), authenticationTimeout());
+                $application = $firestore->getApplication($uid, $token);
+
+                if ($application === null) {
+                    header('Location: ' . applicationUrl('/jeweler/application'), true, 303);
+                    exit;
+                }
+
+                $status = applicationStatus($application);
+                if ($status !== 'approved') {
+                    header('Location: ' . applicationUrl(jewelerDestination($status)), true, 303);
+                    exit;
+                }
+
+                $name = (string) ($application['fields']['fullName']['stringValue'] ?? '');
+                if ($name === '') {
+                    $profile = $firestore->getUserProfile($uid, $token);
+                    $name = is_array($profile) ? (string) ($profile['fields']['name']['stringValue'] ?? '') : '';
+                }
+
+                if ($name === '') {
+                    $name = 'Jeweler';
+                }
+
+                echo jewelerDashboardPage($name);
+                exit;
+            }
+
+            function jewelerDashboardPage(string $name): string
+            {
+                return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Jeweler Dashboard</title><style>' . authStyles() . '</style></head><body><main class="card"><p class="eyebrow">KHAN JEWELERS</p><h1>Welcome, ' . escapeHtml($name) . '.</h1><p class="muted">Your jeweler application has been approved. Welcome to the Khan jeweler dashboard.</p><p class="muted"><strong>Application status:</strong> Approved</p><a class="button" href="' . escapeHtml(applicationUrl('/auth/logout')) . '">Log out</a></main></body></html>';
             }
 
             $actualStatus = applicationStatus($application);

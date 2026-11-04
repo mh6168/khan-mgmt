@@ -146,6 +146,8 @@ match /applications/{userId} {
 
 To display a rejection reason, include `rejectionReason` in the application document and add it to the allowed application fields in the rules. The resubmission update does not let the browser change `uid`; the backend uses the verified session UID.
 
+The dashboard route reads the application document on every access and is available only when its verified UID-owned record has `status: "approved"`. It displays the application `fullName` and does not yet include product, order, or analytics features.
+
 Never put Firebase service-account credentials, private keys, Supabase service-role keys, uploaded documents, or production secrets in the repository or under `public/`. Store them in protected server environment configuration or an approved secret manager.
 
 ## Tests and checks
