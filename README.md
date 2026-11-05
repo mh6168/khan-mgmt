@@ -14,9 +14,12 @@ This repository contains the dependency-free project bootstrap and Firebase Auth
 - A read-only Firestore user-profile lookup at `users/{uid}` for `/auth/me`.
 - Branded responsive signup and login pages with server-side validation.
 - Session-backed logout and a placeholder jeweler application route.
+- Separate PHP-session admin pages under `public/admin/`: `login.php`, `logout.php`, `index.php`, `dashboard.php`, `requests.php`, and `application.php`.
+- Admin credentials are server-side only and configurable with `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH`; when unset, the demo defaults are `admin@admin.com` and `admin`.
 - Dependency-free server-side Firebase ID-token verification using Google’s published secure-token certificates.
 - Placeholders for application, configuration, routes, views, storage, and tests.
-- No protected dashboards, Supabase Storage, uploads, applications, or admin workflows yet.
+- The admin dashboard currently provides a protected foundation for future application review workflows.
+- Admin requests and application detail pages read the existing `applications` and `users` Firestore collections through a server-only Firebase service account. Configure `FIREBASE_ADMIN_SERVICE_ACCOUNT_FILE` with a local, ignored service-account JSON file before enabling live admin data.
 
 ## Technology stack
 
