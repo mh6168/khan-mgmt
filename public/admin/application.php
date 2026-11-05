@@ -72,15 +72,14 @@ if (is_array($application)) {
     <style><?= AdminAuth::styles() ?>.notice{padding:12px 16px;border:1px solid #5d8a62;border-radius:8px;background:#1d3821;color:#d9f3dc}.detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.detail{padding:14px;border:1px solid #55462f;border-radius:8px}.detail strong{display:block;color:#d8aa4b;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.documents{display:grid;gap:12px}.document{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px;border:1px solid #55462f;border-radius:8px}.document a{color:#d8aa4b}.actions{display:flex;gap:12px;flex-wrap:wrap}.actions button{width:auto;margin:0}.reject{background:#7d3b36;color:#fff}@media(max-width:640px){.detail-grid{grid-template-columns:1fr}.document{display:block}.document a{display:inline-block;margin-top:8px}}</style>
 </head>
 <body>
+<?= AdminAuth::sidebar('requests.php') ?>
 <main class="admin-shell">
-    <p class="eyebrow">KHAN MANAGEMENT</p>
-    <div class="admin-header">
+    <div class="admin-main">
+    <p class="page-kicker">Applications / Details</p>
+    <div class="topbar">
         <div><h1>Jeweler application</h1><p class="muted">Review application information and submitted legal documents.</p></div>
         <a class="logout" href="<?= AdminAuth::escape(AdminAuth::pageUrl('logout.php')) ?>">Log out</a>
     </div>
-    <nav class="nav">
-        <a href="<?= AdminAuth::escape(AdminAuth::pageUrl('requests.php')) ?>">Back to requests</a>
-    </nav>
     <section class="panel">
         <?php if ($message !== ''): ?><p class="notice"><?= AdminAuth::escape($message) ?></p><?php endif; ?>
         <?php if ($error !== ''): ?><div class="errors"><?= AdminAuth::escape($error) ?></div><?php endif; ?>
@@ -106,6 +105,7 @@ if (is_array($application)) {
             </form>
         <?php endif; ?>
     </section>
+    </div>
 </main>
 </body>
 </html>

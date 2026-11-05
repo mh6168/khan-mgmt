@@ -51,15 +51,14 @@ function requestStatusClass(string $status): string
     <style><?= AdminAuth::styles() ?>.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.filters label{flex:1;min-width:190px}.filters select{display:block;width:100%;margin-top:8px;padding:13px 14px;border:1px solid #55462f;border-radius:8px;background:#121110;color:#fff;font:inherit}.filters .button{width:auto;margin:0}.table-wrap{overflow-x:auto;margin-top:24px}table{width:100%;border-collapse:collapse;min-width:760px}th,td{padding:14px 12px;border-bottom:1px solid rgba(216,170,75,.18);text-align:left;vertical-align:top}th{color:#d8aa4b;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em}.status{display:inline-block;padding:5px 9px;border-radius:999px;font-size:.78rem;text-transform:capitalize}.status-approved{background:#1d3821;color:#d9f3dc}.status-rejected{background:#3a1c1b;color:#ffd9d4}.status-pending{background:#3d321d;color:#fbf2b5}.details-link{color:#d8aa4b;white-space:nowrap}</style>
 </head>
 <body>
+<?= AdminAuth::sidebar('requests.php') ?>
 <main class="admin-shell">
-    <p class="eyebrow">KHAN MANAGEMENT</p>
-    <div class="admin-header">
+    <div class="admin-main">
+    <p class="page-kicker">Applications</p>
+    <div class="topbar">
         <div><h1>Jeweler requests</h1><p class="muted">Review applications stored in Firebase.</p></div>
         <a class="logout" href="<?= AdminAuth::escape(AdminAuth::pageUrl('logout.php')) ?>">Log out</a>
     </div>
-    <nav class="nav">
-        <a href="<?= AdminAuth::escape(AdminAuth::pageUrl('dashboard.php')) ?>">Dashboard</a>
-    </nav>
     <section class="panel">
         <?php if ($loadError !== ''): ?><div class="errors"><?= AdminAuth::escape($loadError) ?></div><?php endif; ?>
         <form class="filters" method="get">
@@ -93,6 +92,7 @@ function requestStatusClass(string $status): string
             </tbody></table></div>
         <?php endif; ?>
     </section>
+    </div>
 </main>
 </body>
 </html>

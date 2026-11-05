@@ -29,30 +29,29 @@ try {
     <style><?= AdminAuth::styles() ?></style>
 </head>
 <body>
+<?= AdminAuth::sidebar('dashboard.php') ?>
 <main class="admin-shell">
-    <p class="eyebrow">KHAN MANAGEMENT</p>
-    <div class="admin-header">
-        <div>
-            <h1>Admin Dashboard</h1>
-            <p class="muted">Welcome back. Your administration workspace is ready.</p>
+    <div class="admin-main">
+        <p class="page-kicker">Overview</p>
+        <div class="topbar">
+            <div>
+                <h1>Admin Dashboard</h1>
+                <p class="muted">Welcome back. Your administration workspace is ready.</p>
+            </div>
+            <a class="logout" href="<?= AdminAuth::escape(AdminAuth::pageUrl('logout.php')) ?>">Log out</a>
         </div>
-        <a class="logout" href="<?= AdminAuth::escape(AdminAuth::pageUrl('logout.php')) ?>">Log out</a>
+        <section class="panel">
+            <p class="muted">Signed in as <?= $email ?></p>
+            <?php if ($loadError !== ''): ?><div class="errors"><?= AdminAuth::escape($loadError) ?></div><?php endif; ?>
+            <div class="stat-grid">
+                <div class="stat"><strong><?= $stats['total'] ?></strong><span>Total applications</span></div>
+                <div class="stat"><strong><?= $stats['pending'] ?></strong><span>Pending requests</span></div>
+                <div class="stat"><strong><?= $stats['approved'] ?></strong><span>Approved jewelers</span></div>
+                <div class="stat"><strong><?= $stats['rejected'] ?></strong><span>Rejected requests</span></div>
+            </div>
+            <p class="muted">Application statistics are read from the existing Firebase applications collection.</p>
+        </section>
     </div>
-    <nav class="nav">
-        <a href="<?= AdminAuth::escape(AdminAuth::pageUrl('dashboard.php')) ?>">Overview</a>
-        <a href="<?= AdminAuth::escape(AdminAuth::pageUrl('requests.php')) ?>">Jeweler requests</a>
-    </nav>
-    <section class="panel">
-        <p class="muted">Signed in as <?= $email ?></p>
-        <?php if ($loadError !== ''): ?><div class="errors"><?= AdminAuth::escape($loadError) ?></div><?php endif; ?>
-        <div class="stat-grid">
-            <div class="stat"><strong><?= $stats['total'] ?></strong><span>Total applications</span></div>
-            <div class="stat"><strong><?= $stats['pending'] ?></strong><span>Pending requests</span></div>
-            <div class="stat"><strong><?= $stats['approved'] ?></strong><span>Approved jewelers</span></div>
-            <div class="stat"><strong><?= $stats['rejected'] ?></strong><span>Rejected requests</span></div>
-        </div>
-        <p class="muted">Application statistics are read from the existing Firebase applications collection.</p>
-    </section>
 </main>
 </body>
 </html>
