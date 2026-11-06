@@ -3,6 +3,7 @@ RewriteEngine On
 # Keep admin pages in their dedicated directory while supporting clean URLs.
 RewriteRule ^admin/?$ admin/index.php [QSA,L]
 RewriteRule ^admin/(login|logout|dashboard|requests|application)/?$ admin/$1.php [QSA,L]
+RewriteRule ^jeweler/(approved|rejected)\.php$ jeweler/$1.php [QSA,L]
 
 # Keep existing files (such as future assets) directly accessible.
 RewriteCond %{REQUEST_FILENAME} !-f

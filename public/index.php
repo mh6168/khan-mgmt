@@ -65,12 +65,12 @@ if ($path === '/jeweler/pending') {
 }
 
 if ($path === '/jeweler/dashboard') {
-    handleJewelerStatusPage('approved');
+    header('Location: ' . applicationUrl('/jeweler/approved.php'), true, 303);
     exit;
 }
 
 if ($path === '/jeweler/rejected') {
-    handleJewelerStatusPage('rejected');
+    header('Location: ' . applicationUrl('/jeweler/rejected.php'), true, 303);
     exit;
 }
 
@@ -1059,8 +1059,8 @@ function handleCurrentUserRequest(): never
     {
         return match ($status) {
             'pending', 'submitted', 'under_review' => '/jeweler/pending',
-            'approved' => '/jeweler/dashboard',
-            'rejected' => '/jeweler/rejected',
+            'approved' => '/jeweler/approved.php',
+            'rejected' => '/jeweler/rejected.php',
             default => '/jeweler/application',
         };
     }
