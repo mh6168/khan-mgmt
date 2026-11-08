@@ -126,6 +126,36 @@ final class FirestoreAdminClient
     }
 
     /**
+     * Update only subscription fields after a verified Paymob transaction.
+     *
+     * @param array{subscriptionStatus: string, subscriptionAmount: int, subscriptionPaidAt: string, subscriptionExpiresAt: string, paymentTransactionId: string} $subscription
+     */
+    public function updateSubscription(string $uid, array $subscription): void
+    {
+        if ($uid === '' || preg_match('/^[A-Za-z0-9_-]+$/', $uid) !== 1) {
+            throw new InvalidArgumentException('Firebase subscription identifier is invalid.');
+        }
+
+        $fields = [
+            'subscriptionStatus' => ['stringValue' => $subscription['subscriptionStatus']],
+            'subscriptionAmount' => ['integerValue' => (string) $subscription['subscriptionAmount']],
+            'subscriptionPaidAt' => ['stringValue' => $subscription['subscriptionPaidAt']],
+            'subscriptionExpiresAt' => ['stringValue' => $subscription['subscriptionExpiresAt']],
+            'paymentTransactionId' => ['stringValue' => $subscription['paymentTransactionId']],
+        ];
+        $updateMask = implode('&', array_map(
+            static fn (string $field): string => 'updateMask.fieldPaths=' . rawurlencode($field),
+            array_keys($fields)
+        ));
+
+        $this->request(
+            'PATCH',
+            'databases/(default)/documents/applications/' . rawurlencode($uid) . '?' . $updateMask,
+            ['fields' => $fields]
+        );
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     private function listDocuments(string $collection): array

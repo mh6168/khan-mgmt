@@ -130,6 +130,23 @@ final class PaymobClient
         );
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function getOrder(string|int $orderId): array
+    {
+        $orderId = (string) $orderId;
+        if ($orderId === '' || !ctype_digit($orderId)) {
+            throw new InvalidArgumentException('Paymob order ID is invalid.');
+        }
+
+        return $this->request(
+            'GET',
+            '/ecommerce/orders/' . rawurlencode($orderId),
+            $this->requestToken()
+        );
+    }
+
     private function requestToken(): string
     {
         $response = $this->request('POST', '/auth/tokens', null, ['api_key' => $this->apiKey]);
