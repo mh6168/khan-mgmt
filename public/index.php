@@ -65,7 +65,7 @@ if ($path === '/jeweler/pending') {
 }
 
 if ($path === '/jeweler/dashboard') {
-    header('Location: ' . applicationUrl('/jeweler/approved.php'), true, 303);
+    header('Location: ' . applicationUrl('/jeweler/dashboard.php'), true, 303);
     exit;
 }
 
@@ -107,7 +107,7 @@ echo '<body><h1>Not Found</h1><p>The requested page was not found.</p></body></h
 function applicationBasePath(): string
 {
     $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
-    $directory = dirname($scriptName);
+    $directory = str_replace('\\', '/', dirname($scriptName));
 
     if ($directory === '.' || $directory === '/') {
         return '';

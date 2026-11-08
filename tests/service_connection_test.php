@@ -42,7 +42,6 @@ function checkFirebaseConfiguration(): array
     ]);
     $body = curl_exec($handle);
     $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-    curl_close($handle);
 
     if ($body === false || $status < 200 || $status >= 300) {
         return ['connected' => false, 'message' => 'Firebase public signing keys could not be reached.'];

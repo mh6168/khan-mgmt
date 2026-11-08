@@ -22,6 +22,16 @@ final class FirestoreClient
 {
     private const API_BASE_URL = 'https://firestore.googleapis.com/v1/projects/';
 
+    /**
+     * @param array<string, mixed> $product
+     */
+    public static function assertProductOwnership(array $product, string $uid): void
+    {
+        if ($uid === '' || ($product['jewelerId'] ?? null) !== $uid) {
+            throw new FirestoreException('Product access was denied.', 403);
+        }
+    }
+
     public function __construct(
         private readonly string $projectId,
         private readonly int $timeoutSeconds = 10
@@ -33,6 +43,147 @@ final class FirestoreClient
         if ($this->timeoutSeconds < 1 || $this->timeoutSeconds > 60) {
             throw new InvalidArgumentException('Firestore timeout must be between 1 and 60 seconds.');
         }
+    }
+
+    /**
+     * @param array<string, mixed> $product
+     */
+    public function createProduct(string $uid, string $firebaseIdToken, array $product): string
+    {
+        if ($uid === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore product request is invalid.');
+        }
+
+        $product['jewelerId'] = $uid;
+
+        $productId = isset($product['id']) && is_string($product['id']) && $product['id'] !== ''
+            ? $product['id']
+            : bin2hex(random_bytes(12));
+
+        $this->request(
+            'POST',
+            'databases/(default)/documents/products?documentId=' . rawurlencode($productId),
+            $firebaseIdToken,
+            ['fields' => $this->firestoreFields($product)]
+        );
+
+        return $productId;
+    }
+
+    /**
+     * @param array<string, mixed> $product
+     */
+    public function updateProduct(string $productId, string $uid, string $firebaseIdToken, array $product): void
+    {
+        if ($productId === '' || $uid === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore product update request is invalid.');
+        }
+
+        $existingProduct = $this->getProduct($productId, $firebaseIdToken);
+        if ($existingProduct === null) {
+            throw new FirestoreException('Product access was denied.', 403);
+        }
+        self::assertProductOwnership($existingProduct, $uid);
+
+        unset($product['id']);
+        $product['jewelerId'] = $uid;
+        $product['updatedAt'] = gmdate('c');
+
+        $this->request(
+            'PATCH',
+            'databases/(default)/documents/products/' . rawurlencode($productId),
+            $firebaseIdToken,
+            ['fields' => $this->firestoreFields($product)]
+        );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function getProduct(string $productId, string $firebaseIdToken): ?array
+    {
+        if ($productId === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore product request is invalid.');
+        }
+
+        $document = $this->getDocument('products/' . rawurlencode($productId), $firebaseIdToken);
+        return $document === null ? null : $this->decodeDocument($document);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listProductsByJeweler(string $uid, string $firebaseIdToken): array
+    {
+        if ($uid === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore product listing request is invalid.');
+        }
+
+        $response = $this->request('POST', 'databases/(default)/documents:runQuery', $firebaseIdToken, [
+            'structuredQuery' => [
+                'from' => [['collectionId' => 'products']],
+                'where' => [
+                    'fieldFilter' => [
+                        'field' => ['fieldPath' => 'jewelerId'],
+                        'op' => 'EQUAL',
+                        'value' => ['stringValue' => $uid],
+                    ],
+                ],
+            ],
+        ]);
+
+        $products = [];
+        foreach (is_array($response) ? $response : [] as $result) {
+            if (is_array($result['document'] ?? null)) {
+                $products[] = $this->decodeDocument($result['document']);
+            }
+        }
+
+        return $products;
+    }
+
+    public function deleteProduct(string $productId, string $uid, string $firebaseIdToken): void
+    {
+        if ($productId === '' || $uid === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore product deletion request is invalid.');
+        }
+
+        $product = $this->getProduct($productId, $firebaseIdToken);
+        if ($product === null) {
+            throw new FirestoreException('Product access was denied.', 403);
+        }
+        self::assertProductOwnership($product, $uid);
+
+        $this->request(
+            'DELETE',
+            'databases/(default)/documents/products/' . rawurlencode($productId),
+            $firebaseIdToken
+        );
+    }
+
+    public function updateProductAvailability(string $productId, string $uid, string $firebaseIdToken, bool $available): void
+    {
+        if ($productId === '' || $uid === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore product availability request is invalid.');
+        }
+
+        $product = $this->getProduct($productId, $firebaseIdToken);
+        if ($product === null) {
+            throw new FirestoreException('Product access was denied.', 403);
+        }
+        self::assertProductOwnership($product, $uid);
+
+        $payload = [
+            'availability' => ['stringValue' => $available ? 'available' : 'unavailable'],
+            'updatedAt' => ['stringValue' => gmdate('c')],
+        ];
+
+        $this->request(
+            'PATCH',
+            'databases/(default)/documents/products/' . rawurlencode($productId) . '?updateMask.fieldPaths=availability&updateMask.fieldPaths=updatedAt',
+            $firebaseIdToken,
+            ['fields' => $payload]
+        );
     }
 
     /**
@@ -65,7 +216,6 @@ final class FirestoreClient
 
         $responseBody = curl_exec($handle);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
 
         if ($responseBody === false) {
             error_log('Firestore profile request failed: network error.');
@@ -211,6 +361,126 @@ final class FirestoreClient
     }
 
     /**
+     * @param array<string, mixed> $document
+     * @return array<string, mixed>
+     */
+    private function decodeDocument(array $document): array
+    {
+        $decoded = ['id' => basename((string) ($document['name'] ?? ''))];
+        foreach ($document['fields'] ?? [] as $field => $value) {
+            if (is_string($field) && is_array($value)) {
+                $decoded[$field] = $this->decodeFirestoreValue($value);
+            }
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $value
+     */
+    private function decodeFirestoreValue(array $value): mixed
+    {
+        foreach (['stringValue', 'timestampValue', 'referenceValue', 'bytesValue'] as $key) {
+            if (array_key_exists($key, $value)) {
+                return $value[$key];
+            }
+        }
+
+        if (array_key_exists('integerValue', $value)) {
+            return (int) $value['integerValue'];
+        }
+
+        if (array_key_exists('doubleValue', $value)) {
+            return (float) $value['doubleValue'];
+        }
+
+        if (array_key_exists('booleanValue', $value)) {
+            return (bool) $value['booleanValue'];
+        }
+
+        if (array_key_exists('nullValue', $value)) {
+            return null;
+        }
+
+        if (is_array($value['arrayValue']['values'] ?? null)) {
+            $result = [];
+            foreach ($value['arrayValue']['values'] ?? [] as $item) {
+                if (is_array($item)) {
+                    $result[] = $this->decodeFirestoreValue($item);
+                    continue;
+                }
+
+                $result[] = $item;
+            }
+
+            return $result;
+        }
+
+        if (is_array($value['mapValue']['fields'] ?? null)) {
+            $result = [];
+            foreach ($value['mapValue']['fields'] as $key => $child) {
+                if (is_string($key) && is_array($child)) {
+                    $result[$key] = $this->decodeFirestoreValue($child);
+                }
+            }
+            return $result;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function firestoreFields(array $payload): array
+    {
+        $fields = [];
+        foreach ($payload as $key => $value) {
+            $fields[$key] = $this->firestoreFieldValue($value);
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function firestoreFieldValue(mixed $value): array
+    {
+        if (is_string($value)) {
+            return ['stringValue' => $value];
+        }
+
+        if (is_int($value)) {
+            return ['integerValue' => (string) $value];
+        }
+
+        if (is_float($value)) {
+            return ['doubleValue' => (string) $value];
+        }
+
+        if (is_bool($value)) {
+            return ['booleanValue' => $value];
+        }
+
+        if (is_array($value)) {
+            $values = [];
+            foreach ($value as $entry) {
+                $values[] = $this->firestoreFieldValue($entry);
+            }
+            return ['arrayValue' => ['values' => $values]];
+        }
+
+        if ($value === null) {
+            return ['nullValue' => null];
+        }
+
+        return ['stringValue' => (string) $value];
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private function getDocument(string $documentPath, string $firebaseIdToken): ?array
@@ -232,7 +502,6 @@ final class FirestoreClient
 
         $responseBody = curl_exec($handle);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
 
         if ($responseBody === false) {
             throw new FirestoreException('Firestore is temporarily unavailable.', 503);
@@ -289,7 +558,6 @@ final class FirestoreClient
         curl_setopt_array($handle, $options);
         $responseBody = curl_exec($handle);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
 
         if ($responseBody === false) {
             error_log('Firestore profile write failed: network error.');

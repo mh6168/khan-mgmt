@@ -48,7 +48,10 @@ if ($subscriptionStatus === 'active' && is_string($subscriptionExpiresAt) && $su
     <p class="muted">Your application has been approved.</p>
     <div class="status status-approved"><span class="status-dot"></span> Approved</div>
     <p class="muted">Your jeweler account is now active and ready for the next stage of your KHAN journey.</p>
-    <section class="placeholder"><h2>Your Jeweler Dashboard is Coming Soon</h2><p class="muted">We are preparing the tools you will use to manage your jeweler account.</p></section>
+    <section class="placeholder"><h2>Your jeweler workspace is ready</h2><p class="muted">Manage your product listings, gold-based prices, and account details from your dashboard.</p></section>
+    <?php if ($subscriptionIsCurrent): ?>
+        <a class="button" href="<?= JewelerSession::escape(JewelerSession::url('/jeweler/dashboard.php')) ?>">Open dashboard</a>
+    <?php endif; ?>
     <?php if (!$subscriptionIsCurrent): ?>
         <a class="button" href="<?= JewelerSession::escape(JewelerSession::url('/jeweler/subscription-payment.php')) ?>">Pay Subscription Fee – 1,000 EGP</a>
     <?php endif; ?>

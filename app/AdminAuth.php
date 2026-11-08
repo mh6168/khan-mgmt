@@ -91,7 +91,7 @@ final class AdminAuth
     public static function pageUrl(string $page): string
     {
         $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
-        $publicPath = dirname(dirname($scriptName));
+        $publicPath = str_replace('\\', '/', dirname(dirname($scriptName)));
         $basePath = $publicPath === '/' || $publicPath === '.' ? '' : rtrim($publicPath, '/');
 
         return $basePath . '/admin/' . ltrim($page, '/');

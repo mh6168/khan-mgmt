@@ -196,7 +196,6 @@ final class PaymobClient
 
         $responseBody = curl_exec($handle);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
 
         if ($responseBody === false) {
             throw new PaymobException('Paymob is temporarily unavailable.');

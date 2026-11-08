@@ -150,7 +150,6 @@ final class SupabaseStorageClient
         $responseBody = curl_exec($handle);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         $curlError = curl_error($handle);
-        curl_close($handle);
 
         if ($responseBody === false) {
             error_log('Supabase Storage request failed: ' . preg_replace('/[^A-Za-z0-9 .:_-]/', '', $curlError));

@@ -91,7 +91,6 @@ final class FirebaseAuthClient
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         $curlErrorNumber = curl_errno($handle);
         $curlError = curl_error($handle);
-        curl_close($handle);
 
         if ($responseBody === false) {
             $safeCurlError = preg_replace('/[^A-Za-z0-9 .:_-]/', '', $curlError) ?: 'unknown error';

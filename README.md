@@ -72,7 +72,7 @@ The current XAMPP PHP installation includes the baseline extensions needed by th
    - `GET /auth/me` — returns the UID from a successfully verified Firebase ID token
    - `/jeweler/application` — authenticated jeweler application placeholder
    - `/jeweler/pending` — authenticated pending application placeholder
-   - `/jeweler/dashboard` — authenticated approved jeweler dashboard placeholder
+  - `/jeweler/dashboard` — authenticated approved jeweler product dashboard
    - `/jeweler/rejected` — authenticated rejected application placeholder
    - `/auth/logout` — destroys the PHP session and redirects to login
 
@@ -152,7 +152,28 @@ match /applications/{userId} {
 
 To display a rejection reason, include `rejectionReason` in the application document and add it to the allowed application fields in the rules. The resubmission update does not let the browser change `uid`; the backend uses the verified session UID.
 
-The dashboard route reads the application document on every access and is available only when its verified UID-owned record has `status: "approved"`. It displays the application `fullName` and does not yet include product, order, or analytics features.
+The dashboard route reads the application document on every access and is available only when its verified UID-owned record has `status: "approved"` and an active subscription. It provides overview, product management, reservation, sales/analytics, and account sections. Reservation and sales areas remain explicit empty states until those records are added to the application data model.
+
+Jeweler listings use the existing Firestore `products` collection. The dashboard derives `jewelerId` from the verified Firebase session, queries only that UID, and checks ownership again before every update, availability change, or delete. Publish an owner-scoped rule inside the existing `/databases/{database}/documents` match so the authenticated REST query can run:
+
+```javascript
+match /products/{productId} {
+  allow read: if request.auth != null
+    && resource.data.jewelerId == request.auth.uid;
+  allow create: if request.auth != null
+    && request.resource.data.jewelerId == request.auth.uid
+    && request.resource.data.productType in ['watch', 'jewelry'];
+  allow update: if request.auth != null
+    && resource.data.jewelerId == request.auth.uid
+    && request.resource.data.jewelerId == request.auth.uid;
+  allow delete: if request.auth != null
+    && resource.data.jewelerId == request.auth.uid;
+}
+```
+
+The owner-filtered product query must include `where jewelerId == request.auth.uid`; Firestore Security Rules are not query filters and will reject a collection-wide query. Product documents contain either watch fields (`watchType`, `brand`, `model`, `caseMaterial`, `dialColor`, `movementType`, `price`, `countryOfOrigin`) or jewelry fields (`title`, `category`, `totalWeight`, `goldWeight`, `goldKarat`, `goldColor`, `countryOfOrigin`, `currentPremium`, optional `originalPremium`), plus `productType`, `availability`, `createdAt`, `updatedAt`, optional `threeDModelUrl`, and private Supabase `photoPaths`. Jewelry listing prices are recalculated from the current GoldAPI karat price and premium; gold market prices are not persisted as product prices.
+
+Supabase product photos are stored in the configured private bucket under UID-derived paths. Firestore stores object paths, and the dashboard creates short-lived signed URLs for viewing. Keep the Supabase service-role key server-side.
 
 Never put Firebase service-account credentials, private keys, Supabase service-role keys, uploaded documents, or production secrets in the repository or under `public/`. Store them in protected server environment configuration or an approved secret manager.
 
@@ -176,4 +197,4 @@ Before the next implementation stage:
 - Provide Firebase and Supabase values through protected server configuration. The Supabase project must have a private Storage bucket matching `SUPABASE_STORAGE_BUCKET`.
 - Enable Cloud Firestore and create the required `users/{uid}` documents and user-scoped Security Rules.
 - Run `tests\service_connection_test.php` after entering credentials. It does not create users, write Firestore data, upload files, or change either project.
-- Expand protected functionality only after reviewing the `GET /auth/me` verification boundary and its fail-closed behavior.
+- Publish the owner-scoped Firestore `products` rule before using the product dashboard.

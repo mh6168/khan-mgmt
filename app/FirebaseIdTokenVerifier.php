@@ -252,7 +252,6 @@ final class FirebaseIdTokenVerifier
         $response = curl_exec($handle);
         $headerSize = (int) curl_getinfo($handle, CURLINFO_HEADER_SIZE);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
 
         if ($response === false || $httpStatus < 200 || $httpStatus >= 300) {
             throw new FirebaseKeyFetchException('Firebase public keys are unavailable.');
