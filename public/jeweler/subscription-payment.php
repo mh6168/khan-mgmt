@@ -31,7 +31,17 @@ if ($status !== 'approved') {
 }
 
 $subscriptionStatus = $application['fields']['subscriptionStatus']['stringValue'] ?? 'unpaid';
-if ($subscriptionStatus === 'active') {
+$subscriptionExpiresAt = $application['fields']['subscriptionExpiresAt']['stringValue'] ?? '';
+$subscriptionIsCurrent = false;
+if ($subscriptionStatus === 'active' && is_string($subscriptionExpiresAt) && $subscriptionExpiresAt !== '') {
+    try {
+        $subscriptionIsCurrent = new DateTimeImmutable($subscriptionExpiresAt) > new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    } catch (Exception) {
+        $subscriptionIsCurrent = false;
+    }
+}
+
+if ($subscriptionIsCurrent) {
     JewelerSession::redirect('/jeweler/approved.php');
 }
 

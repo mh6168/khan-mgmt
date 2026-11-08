@@ -33,13 +33,22 @@ if ($status !== 'approved') {
 $transactionId = trim((string) ($_GET['id'] ?? $_GET['transaction_id'] ?? ''));
 $storedTransactionId = (string) ($application['fields']['paymentTransactionId']['stringValue'] ?? '');
 $subscriptionStatus = (string) ($application['fields']['subscriptionStatus']['stringValue'] ?? 'unpaid');
+$subscriptionExpiresAt = (string) ($application['fields']['subscriptionExpiresAt']['stringValue'] ?? '');
+$subscriptionIsCurrent = false;
+if ($subscriptionStatus === 'active' && $subscriptionExpiresAt !== '') {
+    try {
+        $subscriptionIsCurrent = new DateTimeImmutable($subscriptionExpiresAt) > new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    } catch (Exception) {
+        $subscriptionIsCurrent = false;
+    }
+}
 
 try {
     if ($transactionId === '') {
         throw new InvalidArgumentException('The payment transaction was not provided.');
     }
 
-    if ($subscriptionStatus === 'active') {
+    if ($subscriptionIsCurrent) {
         if ($storedTransactionId === $transactionId) {
             JewelerSession::redirect('/jeweler/dashboard.php');
         }
@@ -47,10 +56,13 @@ try {
         throw new PaymobException('This jeweler already has an active subscription.');
     }
 
+    if ($storedTransactionId === $transactionId) {
+        throw new PaymobException('This payment transaction was already processed.');
+    }
+
     $transaction = PaymobClient::fromEnvironment()->verifyTransaction($transactionId);
-    if (!is_bool($transaction['success'] ?? null) || $transaction['success'] !== true ||
-        ($transaction['is_captured'] ?? true) !== true
-    ) {
+    $captured = $transaction['is_captured'] ?? $transaction['is_capture'] ?? true;
+    if (!is_bool($transaction['success'] ?? null) || $transaction['success'] !== true || $captured !== true) {
         throw new PaymobException('Paymob did not confirm this payment as successful.');
     }
 
