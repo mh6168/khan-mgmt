@@ -565,12 +565,12 @@ final class FirestoreClient
         }
 
         if ($httpStatus === 401 || $httpStatus === 403) {
-            error_log('Firestore profile write was denied: HTTP ' . $httpStatus . '.');
+            error_log('Firestore request was denied: HTTP ' . $httpStatus . ', response=' . self::safeResponseDetails($responseBody) . '.');
             throw new FirestoreException('Firestore access was denied.', 403);
         }
 
         if ($httpStatus < 200 || $httpStatus >= 300) {
-            error_log('Firestore profile write failed: HTTP ' . $httpStatus . '.');
+            error_log('Firestore request failed: HTTP ' . $httpStatus . ', response=' . self::safeResponseDetails($responseBody) . '.');
             throw new FirestoreException('Firestore is temporarily unavailable.', 503);
         }
 
@@ -585,5 +585,13 @@ final class FirestoreClient
         }
 
         return is_array($response) ? $response : null;
+    }
+
+    private static function safeResponseDetails(string $responseBody): string
+    {
+        $details = trim(preg_replace('/[\x00-\x1F\x7F]+/', ' ', $responseBody) ?? '');
+        $details = preg_replace('/(authorization|apikey|api[_-]?key|token|secret)\\s*[:=]\\s*[^,\\s}]+/i', '$1=[redacted]', $details) ?? $details;
+
+        return substr($details === '' ? 'empty response' : $details, 0, 500);
     }
 }

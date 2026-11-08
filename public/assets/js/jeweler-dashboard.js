@@ -66,6 +66,20 @@ const goldPrices = window.khanGoldPrices || {};
         if (event.target === productDialog) productDialog.close();
     });
     document.querySelectorAll('#jewelry-karat, #jewelry-gold-weight, #jewelry-current-premium, #jewelry-original-premium').forEach((input) => input.addEventListener('input', updateJewelryPrice));
+    const productForm = document.querySelector('.product-form');
+    const productSubmitButton = productForm?.querySelector('button[type="submit"]');
+    productForm?.addEventListener('submit', (event) => {
+        if (productForm.dataset.submitting === 'true') {
+            event.preventDefault();
+            return;
+        }
+
+        productForm.dataset.submitting = 'true';
+        if (productSubmitButton) {
+            productSubmitButton.disabled = true;
+            productSubmitButton.textContent = 'Saving...';
+        }
+    });
     document.querySelectorAll('[data-delete-form]').forEach((form) => form.addEventListener('submit', (event) => {
         if (!window.confirm('Delete this product and its uploaded photos? This cannot be undone.')) event.preventDefault();
     }));

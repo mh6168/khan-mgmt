@@ -92,8 +92,8 @@ final class SupabaseStorageClient
     {
         $this->validateObjectPath($path);
         $this->request(
-            'POST',
-            '/storage/v1/object/remove/' . rawurlencode($this->bucket),
+            'DELETE',
+            '/storage/v1/object/' . rawurlencode($this->bucket),
             json_encode(['prefixes' => [$path]], JSON_THROW_ON_ERROR),
             'application/json'
         );
@@ -157,7 +157,7 @@ final class SupabaseStorageClient
         }
 
         if ($httpStatus < 200 || $httpStatus >= 300) {
-            error_log('Supabase Storage request failed: HTTP ' . $httpStatus . '.');
+            error_log('Supabase Storage request failed: HTTP ' . $httpStatus . ', response=' . $this->safeResponseDetails($responseBody) . '.');
             $safeStatus = $httpStatus === 401 || $httpStatus === 403 ? 502 : ($httpStatus === 404 ? 404 : 503);
             throw new SupabaseStorageException('Supabase Storage rejected the request.', $safeStatus);
         }
@@ -173,6 +173,14 @@ final class SupabaseStorageClient
         }
 
         return is_array($response) ? $response : null;
+    }
+
+    private function safeResponseDetails(string $responseBody): string
+    {
+        $details = trim(preg_replace('/[\x00-\x1F\x7F]+/', ' ', $responseBody) ?? '');
+        $details = preg_replace('/(authorization|apikey|api[_-]?key|token|secret)\\s*[:=]\\s*[^,\\s}]+/i', '$1=[redacted]', $details) ?? $details;
+
+        return substr($details === '' ? 'empty response' : $details, 0, 500);
     }
 
     /**
