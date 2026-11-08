@@ -50,6 +50,7 @@ The current XAMPP PHP installation includes the baseline extensions needed by th
    `http://localhost/khan-mgmt/khan-mgmt/public/`
 
    The web server should expose `public/`, not the repository root. A virtual host or document-root change may be configured separately later, but none is assumed here.
+
 3. Ensure Apache has `mod_rewrite` enabled and permits `.htaccess` overrides so `public/.htaccess` can route non-file requests to `public/index.php`.
 4. Copy `.env.example` to `.env` and fill in the Firebase and Supabase values. Keep `.env` local; it is ignored by Git.
 5. Set `FIREBASE_WEB_API_KEY` and `FIREBASE_PROJECT_ID` to the existing Khan Firebase project values. Set `SUPABASE_URL`, `SUPABASE_STORAGE_BUCKET`, and `SUPABASE_SERVICE_ROLE_KEY` for the existing Supabase project. Do not put credentials in the repository or frontend.
@@ -60,7 +61,6 @@ The current XAMPP PHP installation includes the baseline extensions needed by th
    ```
 
 7. Open the configured local URL in a browser:
-
    - `/` — welcome response
    - `/health` — health response
    - `/signup` — jeweler registration form for full name, phone, email, password, and confirmation
@@ -72,9 +72,10 @@ The current XAMPP PHP installation includes the baseline extensions needed by th
    - `GET /auth/me` — returns the UID from a successfully verified Firebase ID token
    - `/jeweler/application` — authenticated jeweler application placeholder
    - `/jeweler/pending` — authenticated pending application placeholder
-  - `/jeweler/dashboard` — authenticated approved jeweler product dashboard
-   - `/jeweler/rejected` — authenticated rejected application placeholder
-   - `/auth/logout` — destroys the PHP session and redirects to login
+
+- `/jeweler/dashboard` — authenticated approved jeweler product dashboard
+- `/jeweler/rejected` — authenticated rejected application placeholder
+- `/auth/logout` — destroys the PHP session and redirects to login
 
 The authentication endpoints require a JSON body containing `email` and `password`. They return Firebase's ID token, refresh token, expiry, local UID, and email on success. A missing `FIREBASE_WEB_API_KEY` returns a configuration error without attempting a request.
 
