@@ -324,7 +324,7 @@ function handleCurrentUserRequest(): never
             $application = $firestore->getApplication($uid, $token);
             establishSession($token, $claims);
             $destination = is_array($application)
-                ? jewelerDestination(applicationStatus($application))
+                ? jewelerDestination(applicationStatus($application), $application)
                 : jewelerDestination(is_array($profile) ? profileStatus($profile) : 'not_started');
             header('Location: ' . applicationUrl($destination), true, 303);
             exit;
@@ -369,7 +369,7 @@ function handleCurrentUserRequest(): never
         $application = $firestore->getApplication($uid, $token);
 
         if ($application !== null) {
-            header('Location: ' . applicationUrl(jewelerDestination(applicationStatus($application))), true, 303);
+            header('Location: ' . applicationUrl(jewelerDestination(applicationStatus($application), $application)), true, 303);
             exit;
         }
 
@@ -609,7 +609,7 @@ function handleCurrentUserRequest(): never
             $actualStatus = applicationStatus($application);
 
             if ($actualStatus !== 'pending') {
-                header('Location: ' . applicationUrl(jewelerDestination($actualStatus)), true, 303);
+                header('Location: ' . applicationUrl(jewelerDestination($actualStatus, $application)), true, 303);
                 exit;
             }
 
@@ -1055,14 +1055,41 @@ function handleCurrentUserRequest(): never
             : 'not_started';
     }
 
-    function jewelerDestination(string $status): string
+    /**
+     * @param array<string, mixed>|null $application
+     */
+    function jewelerDestination(string $status, ?array $application = null): string
     {
+        if ($status === 'approved' && is_array($application) && subscriptionIsActive($application)) {
+            return '/jeweler/dashboard.php';
+        }
+
         return match ($status) {
             'pending', 'submitted', 'under_review' => '/jeweler/pending',
             'approved' => '/jeweler/approved.php',
             'rejected' => '/jeweler/rejected.php',
             default => '/jeweler/application',
         };
+    }
+
+    /**
+     * @param array<string, mixed> $application
+     */
+    function subscriptionIsActive(array $application): bool
+    {
+        $fields = is_array($application['fields'] ?? null) ? $application['fields'] : [];
+        $status = $fields['subscriptionStatus']['stringValue'] ?? null;
+        $expiresAt = $fields['subscriptionExpiresAt']['stringValue'] ?? null;
+
+        if ($status !== 'active' || !is_string($expiresAt) || $expiresAt === '') {
+            return false;
+        }
+
+        try {
+            return new DateTimeImmutable($expiresAt) > new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        } catch (Exception) {
+            return false;
+        }
     }
 
 function handleCurrentUserRequestVerified(): never

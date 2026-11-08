@@ -28,6 +28,15 @@ if ($status !== 'approved') {
 
 $name = (string) ($application['fields']['fullName']['stringValue'] ?? 'Jeweler');
 $subscriptionStatus = $application['fields']['subscriptionStatus']['stringValue'] ?? 'unpaid';
+$subscriptionExpiresAt = $application['fields']['subscriptionExpiresAt']['stringValue'] ?? '';
+$subscriptionIsCurrent = false;
+if ($subscriptionStatus === 'active' && is_string($subscriptionExpiresAt) && $subscriptionExpiresAt !== '') {
+    try {
+        $subscriptionIsCurrent = new DateTimeImmutable($subscriptionExpiresAt) > new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    } catch (Exception) {
+        $subscriptionIsCurrent = false;
+    }
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -40,7 +49,7 @@ $subscriptionStatus = $application['fields']['subscriptionStatus']['stringValue'
     <div class="status status-approved"><span class="status-dot"></span> Approved</div>
     <p class="muted">Your jeweler account is now active and ready for the next stage of your KHAN journey.</p>
     <section class="placeholder"><h2>Your Jeweler Dashboard is Coming Soon</h2><p class="muted">We are preparing the tools you will use to manage your jeweler account.</p></section>
-    <?php if ($subscriptionStatus !== 'active'): ?>
+    <?php if (!$subscriptionIsCurrent): ?>
         <a class="button" href="<?= JewelerSession::escape(JewelerSession::url('/jeweler/subscription-payment.php')) ?>">Pay Subscription Fee – 1,000 EGP</a>
     <?php endif; ?>
     <a class="button" href="<?= JewelerSession::escape(JewelerSession::url('/auth/logout')) ?>">Log out</a>

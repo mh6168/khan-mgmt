@@ -22,7 +22,17 @@ if ($application === null) {
 
 $status = $application['fields']['status']['stringValue'] ?? 'pending';
 $subscriptionStatus = $application['fields']['subscriptionStatus']['stringValue'] ?? 'unpaid';
-if ($status !== 'approved' || $subscriptionStatus !== 'active') {
+$subscriptionExpiresAt = $application['fields']['subscriptionExpiresAt']['stringValue'] ?? '';
+$subscriptionIsCurrent = false;
+if ($subscriptionStatus === 'active' && is_string($subscriptionExpiresAt) && $subscriptionExpiresAt !== '') {
+    try {
+        $subscriptionIsCurrent = new DateTimeImmutable($subscriptionExpiresAt) > new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    } catch (Exception) {
+        $subscriptionIsCurrent = false;
+    }
+}
+
+if ($status !== 'approved' || !$subscriptionIsCurrent) {
     JewelerSession::redirect('/jeweler/approved.php');
 }
 ?>
@@ -32,8 +42,8 @@ if ($status !== 'approved' || $subscriptionStatus !== 'active') {
 <body>
 <main class="card">
     <p class="eyebrow">KHAN JEWELERS</p>
-    <h1>Coming Soon</h1>
-    <p class="muted">Your jeweler dashboard is being prepared.</p>
+    <h1>Jeweler Dashboard</h1>
+    <p class="muted">Coming Soon</p>
     <a class="button" href="<?= JewelerSession::escape(JewelerSession::url('/auth/logout')) ?>">Log out</a>
 </main>
 </body>
