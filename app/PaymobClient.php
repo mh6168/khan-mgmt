@@ -9,14 +9,15 @@ final class PaymobException extends RuntimeException
 final class PaymobClient
 {
     private const DEFAULT_API_BASE_URL = 'https://accept.paymob.com/api';
-    private const SUBSCRIPTION_AMOUNT_CENTS = 100000;
+    public const SUBSCRIPTION_AMOUNT_CENTS = 100000;
 
     public function __construct(
         private readonly string $apiKey,
         private readonly string $integrationId,
         private readonly string $iframeId,
         private readonly string $apiBaseUrl = self::DEFAULT_API_BASE_URL,
-        private readonly int $timeoutSeconds = 10
+        private readonly int $timeoutSeconds = 10,
+        private readonly string $redirectUrl = ''
     ) {
         if ($this->apiKey === '' || $this->integrationId === '' || $this->iframeId === '') {
             throw new InvalidArgumentException('Paymob test payment is not configured.');
@@ -40,7 +41,8 @@ final class PaymobClient
             trim((string) (getenv('PAYMOB_INTEGRATION_ID') ?: '')),
             trim((string) (getenv('PAYMOB_IFRAME_ID') ?: '')),
             rtrim(trim((string) (getenv('PAYMOB_API_BASE_URL') ?: self::DEFAULT_API_BASE_URL)), '/'),
-            $timeout === false ? 10 : $timeout
+            $timeout === false ? 10 : $timeout,
+            trim((string) (getenv('PAYMOB_REDIRECT_URL') ?: ''))
         );
     }
 
@@ -73,7 +75,7 @@ final class PaymobClient
             throw new PaymobException('Paymob returned an invalid order.');
         }
 
-        $paymentKey = $this->request('POST', '/acceptance/payment_keys', $authToken, [
+        $paymentKeyPayload = [
             'auth_token' => $authToken,
             'amount_cents' => self::SUBSCRIPTION_AMOUNT_CENTS,
             'expiration' => 3600,
@@ -96,7 +98,12 @@ final class PaymobClient
             'currency' => 'EGP',
             'integration_id' => (int) $this->integrationId,
             'lock_order_when_paid' => false,
-        ]);
+        ];
+        if ($this->redirectUrl !== '') {
+            $paymentKeyPayload['redirection_url'] = $this->redirectUrl;
+        }
+
+        $paymentKey = $this->request('POST', '/acceptance/payment_keys', $authToken, $paymentKeyPayload);
 
         $paymentToken = $paymentKey['token'] ?? null;
         if (!is_string($paymentToken) || $paymentToken === '') {
@@ -105,6 +112,22 @@ final class PaymobClient
 
         return 'https://accept.paymob.com/api/acceptance/iframes/' .
             rawurlencode($this->iframeId) . '?payment_token=' . rawurlencode($paymentToken);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function verifyTransaction(string $transactionId): array
+    {
+        if ($transactionId === '' || !ctype_digit($transactionId)) {
+            throw new InvalidArgumentException('Paymob transaction ID is invalid.');
+        }
+
+        return $this->request(
+            'GET',
+            '/acceptance/transactions/' . rawurlencode($transactionId),
+            $this->requestToken()
+        );
     }
 
     private function requestToken(): string
@@ -122,7 +145,11 @@ final class PaymobClient
     /**
      * @return array<string, mixed>
      */
-    private function request(string $method, string $path, ?string $authToken, array $payload): array
+    /**
+     * @param array<string, mixed>|null $payload
+     * @return array<string, mixed>
+     */
+    private function request(string $method, string $path, ?string $authToken, ?array $payload = null): array
     {
         $handle = curl_init($this->apiBaseUrl . $path);
         if ($handle === false) {
@@ -134,16 +161,21 @@ final class PaymobClient
             $headers[] = 'Authorization: Bearer ' . $authToken;
         }
 
-        curl_setopt_array($handle, [
+        $options = [
             CURLOPT_CUSTOMREQUEST => $method,
-            CURLOPT_POSTFIELDS => json_encode($payload, JSON_THROW_ON_ERROR),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_CONNECTTIMEOUT => $this->timeoutSeconds,
             CURLOPT_TIMEOUT => $this->timeoutSeconds,
-        ]);
+        ];
+
+        if ($payload !== null) {
+            $options[CURLOPT_POSTFIELDS] = json_encode($payload, JSON_THROW_ON_ERROR);
+        }
+
+        curl_setopt_array($handle, $options);
 
         $responseBody = curl_exec($handle);
         $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);

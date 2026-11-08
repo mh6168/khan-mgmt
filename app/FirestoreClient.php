@@ -154,6 +154,38 @@ final class FirestoreClient
     }
 
     /**
+     * Update only subscription fields so application data remains unchanged.
+     *
+     * @param array{subscriptionStatus: string, subscriptionAmount: int, subscriptionPaidAt: string, subscriptionExpiresAt: string, paymentTransactionId: string} $subscription
+     */
+    public function updateSubscription(string $uid, string $firebaseIdToken, array $subscription): void
+    {
+        if ($uid === '' || $firebaseIdToken === '') {
+            throw new InvalidArgumentException('Firestore subscription request is invalid.');
+        }
+
+        $fields = [
+            'subscriptionStatus' => ['stringValue' => $subscription['subscriptionStatus']],
+            'subscriptionAmount' => ['integerValue' => (string) $subscription['subscriptionAmount']],
+            'subscriptionPaidAt' => ['stringValue' => $subscription['subscriptionPaidAt']],
+            'subscriptionExpiresAt' => ['stringValue' => $subscription['subscriptionExpiresAt']],
+            'paymentTransactionId' => ['stringValue' => $subscription['paymentTransactionId']],
+        ];
+
+        $updateMask = implode('&', array_map(
+            static fn (string $field): string => 'updateMask.fieldPaths=' . rawurlencode($field),
+            array_keys($fields)
+        ));
+
+        $this->request(
+            'PATCH',
+            'databases/(default)/documents/applications/' . rawurlencode($uid) . '?' . $updateMask,
+            $firebaseIdToken,
+            ['fields' => $fields]
+        );
+    }
+
+    /**
      * Creates users/{uid} using the existing Firestore Security Rules schema.
      *
      * @param array{name: string, email: string, phone: string, uid: string, createdAt: string} $profile

@@ -5,6 +5,7 @@ RewriteRule ^admin/?$ admin/index.php [QSA,L]
 RewriteRule ^admin/(login|logout|dashboard|requests|application)/?$ admin/$1.php [QSA,L]
 RewriteRule ^jeweler/(approved|rejected)\.php$ jeweler/$1.php [QSA,L]
 RewriteRule ^jeweler/subscription-payment\.php$ jeweler/subscription-payment.php [QSA,L]
+RewriteRule ^jeweler/(payment-success|payment-failed|dashboard)\.php$ jeweler/$1.php [QSA,L]
 
 # Keep existing files (such as future assets) directly accessible.
 RewriteCond %{REQUEST_FILENAME} !-f
