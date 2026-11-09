@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= JewelerSession::escape($viewTitle) ?> | KHAN Jeweler</title>
     <style><?= JewelerSession::styles() ?></style>
-    <link rel="stylesheet" href="<?= JewelerSession::escape(JewelerSession::url('/assets/css/jeweler-dashboard.css')) ?>">
+    <link rel="stylesheet" href="<?= JewelerSession::escape(JewelerSession::url('/assets/css/jeweler-dashboard.css?v=' . (string) filemtime(dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'css' . DIRECTORY_SEPARATOR . 'jeweler-dashboard.css'))) ?>">
 </head>
 <body>
 <div class="app-shell">
