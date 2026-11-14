@@ -283,7 +283,6 @@ final class FirestoreAdminClient
         curl_setopt_array($handle, $options);
         $body = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
 
         if ($body === false) {
             throw new FirestoreException('Firestore is temporarily unavailable.', 503);
@@ -354,7 +353,6 @@ final class FirestoreAdminClient
 
         $body = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
 
         if ($body === false || $status < 200 || $status >= 300) {
             throw new FirestoreException('Firebase admin authentication is unavailable.', 503);
