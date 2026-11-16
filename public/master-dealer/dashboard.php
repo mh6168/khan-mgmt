@@ -1,5 +1,7 @@
 <?php
 
+//empty, no content available, failed review
+
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'MasterDealerAuth.php';
