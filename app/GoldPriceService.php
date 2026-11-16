@@ -5,7 +5,8 @@ declare(strict_types=1);
 final class GoldPriceService
 {
     private const DEFAULT_TTL_SECONDS = 1800;
-    private const DEFAULT_API_URL = 'https://www.goldapi.io/api/XAU/EGP';
+    private const DEFAULT_API_URL = 'https://www.goldapi.io/api/price/XAU/EGP?melt_price=true&currency_info=true';
+    private const DEFAULT_SILVER_API_URL = 'https://www.goldapi.io/api/price/XAG/EGP?melt_price=true&currency_info=true';
     private const KARAT_FIELDS = [
         24 => 'price_gram_24k',
         22 => 'price_gram_22k',
@@ -18,7 +19,8 @@ final class GoldPriceService
         private readonly ?string $cacheFile = null,
         private readonly int $cacheTtlSeconds = self::DEFAULT_TTL_SECONDS,
         private readonly int $timeoutSeconds = 10,
-        private readonly ?string $apiUrl = null
+        private readonly ?string $apiUrl = null,
+        private readonly string $metal = 'XAU'
     ) {
         if ($this->cacheTtlSeconds < 300 || $this->cacheTtlSeconds > 3600) {
             throw new InvalidArgumentException('Gold price cache TTL must be between 300 and 3600 seconds.');
@@ -27,18 +29,28 @@ final class GoldPriceService
         if ($this->timeoutSeconds < 1 || $this->timeoutSeconds > 30) {
             throw new InvalidArgumentException('Gold price API timeout must be between 1 and 30 seconds.');
         }
+
+        if (!in_array($this->metal, ['XAU', 'XAG'], true)) {
+            throw new InvalidArgumentException('Gold price metal must be XAU or XAG.');
+        }
     }
 
-    public static function fromEnvironment(): self
+    public static function fromEnvironment(string $metal = 'XAU'): self
     {
-        $cacheFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'gold-price-cache.json';
+        if (!in_array($metal, ['XAU', 'XAG'], true)) {
+            throw new InvalidArgumentException('Gold price metal must be XAU or XAG.');
+        }
+        $cacheFileName = $metal === 'XAG' ? 'silver-price-cache.json' : 'gold-price-cache.json';
+        $apiUrl = $metal === 'XAG' ? self::DEFAULT_SILVER_API_URL : self::DEFAULT_API_URL;
+        $cacheFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . $cacheFileName;
 
         return new self(
             trim((string) (getenv('GOLD_API_KEY') ?: '')),
             $cacheFile,
             self::DEFAULT_TTL_SECONDS,
             10,
-            self::DEFAULT_API_URL
+            $apiUrl,
+            $metal
         );
     }
 
@@ -70,6 +82,10 @@ final class GoldPriceService
 
     public function priceForKarat(int $karat): ?float
     {
+        if ($this->metal !== 'XAU') {
+            return null;
+        }
+
         $data = $this->latest();
 
         if (($data['available'] ?? false) !== true) {
@@ -93,7 +109,7 @@ final class GoldPriceService
             throw new InvalidArgumentException('GOLD_API_KEY is not configured.');
         }
 
-        $url = $this->apiUrl ?? self::DEFAULT_API_URL;
+        $url = $this->apiUrl ?? ($this->metal === 'XAG' ? self::DEFAULT_SILVER_API_URL : self::DEFAULT_API_URL);
         $handle = curl_init($url);
 
         if ($handle === false) {
@@ -152,12 +168,50 @@ final class GoldPriceService
      */
     private function normalizeResponse(array $response): ?array
     {
+        if ($this->metal === 'XAG') {
+            $silver925 = $this->coerceFloat($response['price_gram_925'] ?? null);
+            if ($silver925 === null) {
+                $silver925 = $this->coerceFloat($response['melt_price_per_gram']['925'] ?? null);
+            }
+            if ($silver925 === null) {
+                $pureSilverPerGram = $this->coerceFloat($response['price_per_unit']['gram'] ?? null);
+                $silver925 = $pureSilverPerGram === null ? null : $pureSilverPerGram * 0.925;
+            }
+            if ($silver925 === null) {
+                return null;
+            }
+
+            $timestamp = $response['timestamp'] ?? $response['updated_at'] ?? time();
+            $convertedTimestamp = is_numeric($timestamp) ? (int) $timestamp : strtotime((string) $timestamp);
+            if ($convertedTimestamp === false) {
+                $convertedTimestamp = time();
+            }
+
+            return [
+                'available' => true,
+                'cached' => false,
+                'source' => 'live',
+                'message' => 'Live 925 silver price from GoldAPI.',
+                'metal' => 'XAG',
+                'currency' => strtoupper((string) ($response['currency'] ?? 'EGP')),
+                'updatedAt' => date(DATE_ATOM, $convertedTimestamp),
+                'updatedAtUnix' => $convertedTimestamp,
+                'cacheExpiresAt' => time() + $this->cacheTtlSeconds,
+                'price_gram_925' => $silver925,
+                'prices' => ['price_gram_925' => $silver925],
+            ];
+        }
+
         $prices = [];
         foreach (self::KARAT_FIELDS as $karat => $fieldName) {
-            $value = $this->coerceFloat($response[$fieldName] ?? null);
+            $value = $this->coerceFloat($response[$fieldName] ?? $response['melt_price_per_gram'][$karat . 'k'] ?? null);
+            if ($value === null && $karat === 24) {
+                $value = $this->coerceFloat($response['price_per_unit']['gram'] ?? null);
+            }
             if ($value !== null) {
                 $prices[$fieldName] = $value;
             }
+
         }
 
         if ($prices === []) {
@@ -244,6 +298,15 @@ final class GoldPriceService
                 $cached[$fieldName] = $value;
                 $cached['karat_' . $karat] = $value;
                 $cached['prices'][$fieldName] = $value;
+                $hasData = true;
+            }
+        }
+
+        if ($this->metal === 'XAG') {
+            $silver925 = $this->coerceFloat($payload['price_gram_925'] ?? null);
+            if ($silver925 !== null) {
+                $cached['price_gram_925'] = $silver925;
+                $cached['prices']['price_gram_925'] = $silver925;
                 $hasData = true;
             }
         }

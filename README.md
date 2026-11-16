@@ -178,6 +178,34 @@ Supabase product photos are stored in the configured private bucket under UID-de
 
 Never put Firebase service-account credentials, private keys, Supabase service-role keys, uploaded documents, or production secrets in the repository or under `public/`. Store them in protected server environment configuration or an approved secret manager.
 
+## Master Dealer workspace
+
+The Master Dealer pages remain protected by the existing demo login (`master@master.com` / `master`). The workspace is available under `public/master-dealer/` and includes overview, live prices, inventory adjustments, buyback handling, financial ledger, and transaction history. The demo credentials are for development only.
+
+The module uses the existing Firestore service-account configuration (`FIREBASE_ADMIN_SERVICE_ACCOUNT_FILE`) and creates these collections/documents as needed:
+
+- `masterDealerInventory/{lira|para}` stores on-hand `quantity`, checkout `reserved` quantity, and update time.
+- `masterDealerPurchaseOrders/{purchaseId}` stores customer quantities, locked prices, amount, expiry, and payment state.
+- `masterDealerBuybacks/{requestId}` stores customer identity, submitted quantities, InstaPay phone, locked unit prices, total payout, and status (`pending`, `processing`, or `completed`). There is no reject operation.
+- `masterDealerFinance/account` stores the internal EGP ledger balance in integer minor units.
+- `masterDealerTransactions/{transactionId}` stores inventory adjustments, verified purchases, and completed buybacks. Inventory, finance, request/order state, and ledger writes are committed together through Firestore transactions.
+
+Use the Inventory page to enter opening stock as a recorded adjustment; quantities are not silently initialized to a nonzero value. Positive and negative adjustments are recorded and cannot reduce stock below active reservations. Customer buyback completion adds the locked request quantities to stock and records the payout/balance movement atomically; repeating completion does not duplicate the movement. The financial balance is an internal ledger figure, not a bank balance or evidence of an external transfer.
+
+The existing GoldAPI service now supports both GoldAPI gold and silver quotes. Lira pricing uses 0.01 g of 24K EGP gold; Para pricing uses 1 g of 925 EGP silver. Each asset quote shows its source update time, and unavailable prices remain unavailable rather than being fabricated. The same GoldAPI key and pricing service are used; a separate silver cache avoids mixing metals.
+
+### Flutter purchase and buyback API contract
+
+The customer endpoints are `POST /master-dealer/api.php?action=purchase-order` and `POST /master-dealer/api.php?action=buyback`. Both require `Authorization: Bearer <Firebase ID token>`, an `Idempotency-Key` header (16–128 URL-safe characters), and a JSON object. Purchase-order and buyback bodies contain integer `liraQuantity` and `paraQuantity`; buyback also requires `instaPayPhone`. Reusing the same key with the same request returns the original order/request, while reusing it for different details is rejected. Buyback prices and totals are calculated and locked by the server at submission.
+
+Purchase-order creation reserves stock for **15 minutes** to prevent concurrent checkouts from overselling. The response includes a `purchaseOrderId`, the required Paymob `merchantOrderId` (`khan-md-{purchaseOrderId}`), and exact `amountPiasters`. The Flutter/Paymob integration must create a payment for that exact amount and merchant order ID. The reservation is released when the order expires; purchase settlement decreases on-hand stock and increases the ledger balance only after server-side Paymob verification.
+
+After payment, the mobile/server integration calls `POST /master-dealer/api.php?action=confirm-payment` with `purchaseOrderId` and `paymobTransactionId`. The PHP server fetches the transaction from Paymob, verifies success, EGP amount, transaction ID, and matching merchant order ID, then atomically settles it. A client-supplied success flag is never accepted. This endpoint requires a configured server-side `PAYMOB_API_KEY`; the existing repository’s Paymob checkout is for jeweler subscriptions, and the Flutter purchase flow must be wired to the merchant-order-ID contract above before customer purchases can settle here. The Master Dealer implementation does not claim that Paymob has transferred funds automatically.
+
+All API calls that create a purchase or buyback require Firebase token verification. The Paymob confirmation call itself needs no Firebase token because Paymob is queried independently; it changes no state unless all payment and order checks pass. Firestore transaction operations use the server-only service account and are not exposed as direct client writes.
+
+The PHP repository does not contain an authoritative customer Lira/Para holdings ledger or the Flutter source. The buyback API binds a request to the verified Firebase UID, but cannot independently prove that the customer owns the submitted quantities. Connect it to the mobile system’s trusted holdings ledger before treating requests as production-validated buybacks; client-supplied counts alone are not proof of ownership.
+
 ## Tests and checks
 
 Composer and a test runner are not configured. Run PHP syntax checks from PowerShell with:

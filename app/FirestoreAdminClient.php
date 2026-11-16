@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-final class FirestoreAdminClient
+class FirestoreAdminClient
 {
     private const API_BASE_URL = 'https://firestore.googleapis.com/v1/projects/';
     private const TOKEN_SCOPE = 'https://www.googleapis.com/auth/datastore';
@@ -25,6 +25,10 @@ final class FirestoreAdminClient
 
         if ($this->timeoutSeconds < 1 || $this->timeoutSeconds > 60) {
             throw new InvalidArgumentException('Firestore admin timeout must be between 1 and 60 seconds.');
+        }
+
+        if (!is_file($credentialsFile) || !is_readable($credentialsFile)) {
+            throw new InvalidArgumentException('Firebase admin credentials file is unavailable.');
         }
 
         $contents = file_get_contents($credentialsFile);
@@ -155,6 +159,79 @@ final class FirestoreAdminClient
         );
     }
 
+    public function beginTransaction(): string
+    {
+        $response = $this->request(
+            'POST',
+            'databases/(default)/documents:beginTransaction',
+            ['options' => ['readWrite' => new stdClass()]]
+        );
+        $transaction = $response['transaction'] ?? null;
+
+        if (!is_string($transaction) || $transaction === '') {
+            throw new FirestoreException('Firestore did not start a transaction.', 503);
+        }
+
+        return $transaction;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function readTransactionDocument(string $transaction, string $documentPath): ?array
+    {
+        if ($transaction === '' || $documentPath === '') {
+            throw new InvalidArgumentException('Firestore transaction read is invalid.');
+        }
+
+        $document = $this->request(
+            'GET',
+            'databases/(default)/documents/' . $documentPath . '?transaction=' . rawurlencode($transaction)
+        );
+
+        return $document === null ? null : $this->decodeDocument($document);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function document(string $documentPath): ?array
+    {
+        if ($documentPath === '') {
+            throw new InvalidArgumentException('Firestore document path is invalid.');
+        }
+
+        $document = $this->request('GET', 'databases/(default)/documents/' . $documentPath);
+        return $document === null ? null : $this->decodeDocument($document);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $writes Firestore REST Write objects.
+     */
+    public function commitTransaction(string $transaction, array $writes): void
+    {
+        if ($transaction === '' || $writes === []) {
+            throw new InvalidArgumentException('Firestore transaction commit is invalid.');
+        }
+
+        $this->request('POST', 'databases/(default)/documents:commit', [
+            'writes' => $writes,
+            'transaction' => $transaction,
+        ]);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function collection(string $collection): array
+    {
+        if (preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $collection) !== 1) {
+            throw new InvalidArgumentException('Firestore collection name is invalid.');
+        }
+
+        return $this->listDocuments($collection);
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -192,7 +269,7 @@ final class FirestoreAdminClient
      * @param array<string, mixed> $document
      * @return array<string, mixed>
      */
-    private function decodeDocument(array $document): array
+    public function decodeDocument(array $document): array
     {
         $name = is_string($document['name'] ?? null) ? $document['name'] : '';
         $uid = basename($name);

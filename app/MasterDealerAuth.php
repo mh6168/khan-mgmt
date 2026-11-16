@@ -62,6 +62,24 @@ final class MasterDealerAuth
         session_destroy();
     }
 
+    public static function csrfToken(): string
+    {
+        if (!is_string($_SESSION['master_dealer_csrf_token'] ?? null) ||
+            $_SESSION['master_dealer_csrf_token'] === ''
+        ) {
+            $_SESSION['master_dealer_csrf_token'] = bin2hex(random_bytes(32));
+        }
+
+        return $_SESSION['master_dealer_csrf_token'];
+    }
+
+    public static function verifyCsrfToken(string $token): bool
+    {
+        return $token !== '' &&
+            is_string($_SESSION['master_dealer_csrf_token'] ?? null) &&
+            hash_equals($_SESSION['master_dealer_csrf_token'], $token);
+    }
+
     public static function url(string $page): string
     {
         $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
@@ -71,6 +89,17 @@ final class MasterDealerAuth
             : rtrim($publicPath, '/');
 
         return $basePath . '/master-dealer/' . ltrim($page, '/');
+    }
+
+    public static function assetUrl(string $path): string
+    {
+        $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+        $publicPath = str_replace('\\', '/', dirname(dirname($scriptName)));
+        $basePath = $publicPath === '/' || $publicPath === '.'
+            ? ''
+            : rtrim($publicPath, '/');
+
+        return $basePath . '/assets/' . ltrim($path, '/');
     }
 
     public static function escape(string $value): string

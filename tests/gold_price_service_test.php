@@ -33,6 +33,25 @@ try {
     assertGoldCondition($normalized['price_gram_21k'] === 2100.0, '21K price mismatch.');
     assertGoldCondition($normalized['price_gram_18k'] === 1800.0, '18K price mismatch.');
     assertGoldCondition($normalizedResponse->invoke($service, ['price_gram_24k' => -5]) === null, 'Invalid negative API prices must be rejected.');
+    $currentApiFormat = $normalizedResponse->invoke($service, [
+        'price_per_unit' => ['gram' => 2450],
+        'melt_price_per_gram' => ['22k' => 2245, '21k' => 2140, '18k' => 1837.5],
+        'timestamp' => time(),
+    ]);
+    assertGoldCondition($currentApiFormat['price_gram_24k'] === 2450.0, 'Current GoldAPI 24K response format should normalize.');
+    assertGoldCondition($currentApiFormat['price_gram_22k'] === 2245.0, 'Current GoldAPI 22K response format should normalize.');
+
+    $silverService = new GoldPriceService('', null, 1800, 2, null, 'XAG');
+    $silverNormalizer = new ReflectionMethod(GoldPriceService::class, 'normalizeResponse');
+    $silverNormalizer->setAccessible(true);
+    $silver925 = $silverNormalizer->invoke($silverService, [
+        'price_per_unit' => ['gram' => 100],
+        'currency' => 'EGP',
+        'timestamp' => time(),
+    ]);
+    assertGoldCondition($silver925['price_gram_925'] === 92.5, '925 silver price should be calculated from the GoldAPI silver gram quote.');
+    $explicitSilver925 = $silverNormalizer->invoke($silverService, ['price_gram_925' => 95]);
+    assertGoldCondition($explicitSilver925['price_gram_925'] === 95.0, 'Explicit 925 silver quote should be preserved.');
 
     $cache = $normalized;
     $cache['cacheExpiresAt'] = time() + 600;
