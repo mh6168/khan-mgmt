@@ -22,7 +22,9 @@ final class MasterDealerBuybackService
         int $liraQuantity,
         int $paraQuantity,
         string $instaPayPhone,
-        ?string $idempotencyKey = null
+        ?string $idempotencyKey = null,
+        string $customerName = '',
+        string $customerPhone = ''
     ): array {
         if ($customerUid === '' || strlen($customerUid) > 128) {
             throw new InvalidArgumentException('Customer identity is invalid.');
@@ -44,19 +46,19 @@ final class MasterDealerBuybackService
         $id = $idempotencyKey === null
             ? $this->store->newId()
             : substr(hash('sha256', $customerUid . ':' . $idempotencyKey), 0, 32);
-        $path = 'masterDealerBuybacks/' . $id;
+        $path = 'masterDealerSellRequests/' . $id;
         $transaction = $this->store->beginTransaction();
         $existingRequest = $this->store->read($path, $transaction);
         if ($existingRequest !== null) {
             if (($existingRequest['customerUid'] ?? '') !== $customerUid ||
                 (int) ($existingRequest['liraQuantity'] ?? -1) !== $liraQuantity ||
                 (int) ($existingRequest['paraQuantity'] ?? -1) !== $paraQuantity ||
-                ($existingRequest['instaPayPhone'] ?? '') !== $instaPayPhone
+                ($existingRequest['instapayPhone'] ?? '') !== $instaPayPhone
             ) {
                 throw new InvalidArgumentException('Buyback idempotency key was already used for different request details.');
             }
             $existingRequest['id'] = $id;
-            $existingRequest['totalAmountEgp'] = ((int) ($existingRequest['totalAmountMinorUnits'] ?? 0)) / 100;
+            $existingRequest['totalAmountEgp'] = ((int) ($existingRequest['totalPayoutMinor'] ?? 0)) / 100;
             return $existingRequest;
         }
 
@@ -70,19 +72,40 @@ final class MasterDealerBuybackService
 
         $request = [
             'customerUid' => $customerUid,
+            'customerName' => trim($customerName),
             'customerEmail' => filter_var($customerEmail, FILTER_VALIDATE_EMAIL) ? strtolower($customerEmail) : '',
+            'customerPhone' => trim($customerPhone),
+            'instapayPhone' => $instaPayPhone,
             'liraQuantity' => $liraQuantity,
             'paraQuantity' => $paraQuantity,
             'liraUnitPriceMinor' => $liraUnitPriceMinor,
             'paraUnitPriceMinor' => $paraUnitPriceMinor,
-            'totalAmountMinorUnits' => $totalAmountMinor,
+            'totalPayoutMinor' => $totalAmountMinor,
             'currency' => 'EGP',
-            'instaPayPhone' => $instaPayPhone,
-            'status' => 'pending',
-            'submittedAt' => gmdate('c'),
+            'status' => 'processing',
+            'createdAt' => gmdate('c'),
         ];
+        $portfolioPath = 'customerPortfolios/' . $customerUid;
+        $portfolio = $this->store->read($portfolioPath, $transaction);
+        $liraHeld = (int) ($portfolio['liraQuantity'] ?? 0);
+        $paraHeld = (int) ($portfolio['paraQuantity'] ?? 0);
+        $liraReserved = (int) ($portfolio['reservedLiraQuantity'] ?? 0);
+        $paraReserved = (int) ($portfolio['reservedParaQuantity'] ?? 0);
+        if ($portfolio === null ||
+            $liraQuantity > $liraHeld - $liraReserved ||
+            $paraQuantity > $paraHeld - $paraReserved
+        ) {
+            throw new InvalidArgumentException('Requested quantities exceed the customer available holdings.');
+        }
         $this->store->commit($transaction, [
             $this->store->createWrite($path, $request),
+            $this->store->updateWrite($portfolioPath, [
+                'liraQuantity' => $liraHeld,
+                'paraQuantity' => $paraHeld,
+                'reservedLiraQuantity' => $liraReserved + $liraQuantity,
+                'reservedParaQuantity' => $paraReserved + $paraQuantity,
+                'updatedAt' => gmdate('c'),
+            ]),
         ]);
         $request['id'] = $id;
         $request['totalAmountEgp'] = $totalAmountMinor / 100;
@@ -95,9 +118,9 @@ final class MasterDealerBuybackService
      */
     public function requests(): array
     {
-        $requests = $this->store->collection('masterDealerBuybacks');
+        $requests = $this->store->collection('masterDealerSellRequests');
         usort($requests, static fn (array $left, array $right): int =>
-            strcmp((string) ($right['submittedAt'] ?? ''), (string) ($left['submittedAt'] ?? ''))
+            strcmp((string) ($right['createdAt'] ?? ''), (string) ($left['createdAt'] ?? ''))
         );
 
         return $requests;
@@ -108,101 +131,125 @@ final class MasterDealerBuybackService
      */
     public function request(string $id): ?array
     {
-        if (preg_match('/^[a-f0-9]{32}$/', $id) !== 1) {
+        if ($id === '' || strlen($id) > 128 || str_contains($id, '/')) {
             return null;
         }
 
-        return $this->store->document('masterDealerBuybacks/' . $id);
+        return $this->store->document('masterDealerSellRequests/' . $id);
     }
 
     public function startProcessing(string $id): bool
     {
-        if (preg_match('/^[a-f0-9]{32}$/', $id) !== 1) {
+        if ($id === '' || strlen($id) > 128 || str_contains($id, '/')) {
             throw new InvalidArgumentException('Buyback request ID is invalid.');
         }
 
-        $path = 'masterDealerBuybacks/' . $id;
-        $transaction = $this->store->beginTransaction();
-        $request = $this->store->read($path, $transaction);
-        if ($request === null) {
-            throw new InvalidArgumentException('Buyback request was not found.');
-        }
-        if (($request['status'] ?? '') === 'completed') {
-            return false;
-        }
-        if (($request['status'] ?? '') === 'processing') {
-            return false;
-        }
-        if (($request['status'] ?? '') !== 'pending') {
-            throw new InvalidArgumentException('Buyback request cannot be processed.');
-        }
-
-        $request['status'] = 'processing';
-        $request['processingStartedAt'] = gmdate('c');
-        $this->store->commit($transaction, [$this->store->updateWrite($path, $request)]);
-        return true;
+        return false;
     }
 
     public function complete(string $id): bool
     {
-        if (preg_match('/^[a-f0-9]{32}$/', $id) !== 1) {
+        if ($id === '' || strlen($id) > 128 || str_contains($id, '/')) {
             throw new InvalidArgumentException('Buyback request ID is invalid.');
         }
 
-        $requestPath = 'masterDealerBuybacks/' . $id;
+        $requestPath = 'masterDealerSellRequests/' . $id;
         $ledgerPath = 'masterDealerTransactions/buyback-' . $id;
         $liraPath = 'masterDealerInventory/lira';
         $paraPath = 'masterDealerInventory/para';
-        $financePath = 'masterDealerFinance/account';
         $transaction = $this->store->beginTransaction();
         $request = $this->store->read($requestPath, $transaction);
         $existingEntry = $this->store->read($ledgerPath, $transaction);
         if ($existingEntry !== null || ($request['status'] ?? '') === 'completed') {
             return false;
         }
-        if ($request === null || !in_array($request['status'] ?? '', ['pending', 'processing'], true)) {
-            throw new InvalidArgumentException('Buyback request is not ready for completion.');
+        if ($request === null) {
+            throw new InvalidArgumentException('Buyback request was not found.');
+        }
+        if (($request['status'] ?? '') === 'money_transferred') {
+            return false;
+        }
+        if (($request['status'] ?? '') !== 'processing') {
+            throw new InvalidArgumentException('Buyback request is not awaiting transfer.');
         }
 
         $lira = $this->store->read($liraPath, $transaction);
         $para = $this->store->read($paraPath, $transaction);
-        $finance = $this->store->read($financePath, $transaction);
         $liraQuantity = (int) ($request['liraQuantity'] ?? 0);
         $paraQuantity = (int) ($request['paraQuantity'] ?? 0);
-        $amount = (int) ($request['totalAmountMinorUnits'] ?? 0);
-        if ($amount <= 0) {
-            throw new RuntimeException('Buyback payout amount is invalid.');
+        $liraUnitPriceMinor = (int) ($request['liraUnitPriceMinor'] ?? 0);
+        $paraUnitPriceMinor = (int) ($request['paraUnitPriceMinor'] ?? 0);
+        $amount = (int) ($request['totalPayoutMinor'] ?? 0);
+        $customerUid = (string) ($request['customerUid'] ?? '');
+        if ($customerUid === '' ||
+            $liraQuantity < 0 ||
+            $paraQuantity < 0 ||
+            ($liraQuantity === 0 && $paraQuantity === 0) ||
+            $liraQuantity > 10000 ||
+            $paraQuantity > 10000 ||
+            $liraUnitPriceMinor <= 0 ||
+            $paraUnitPriceMinor <= 0 ||
+            ($request['currency'] ?? '') !== 'EGP' ||
+            $amount !== $liraQuantity * $liraUnitPriceMinor + $paraQuantity * $paraUnitPriceMinor
+        ) {
+            throw new InvalidArgumentException('Buyback request data is invalid.');
+        }
+        $portfolioPath = 'customerPortfolios/' . $customerUid;
+        $portfolio = $this->store->read($portfolioPath, $transaction);
+        if ($portfolio === null ||
+            ($liraQuantity > 0 && $lira === null) ||
+            ($paraQuantity > 0 && $para === null)
+        ) {
+            throw new RuntimeException('Portfolio or Master Dealer inventory is unavailable.');
+        }
+        $liraHeld = (int) ($portfolio['liraQuantity'] ?? 0);
+        $paraHeld = (int) ($portfolio['paraQuantity'] ?? 0);
+        $liraReserved = (int) ($portfolio['reservedLiraQuantity'] ?? 0);
+        $paraReserved = (int) ($portfolio['reservedParaQuantity'] ?? 0);
+        if ($liraHeld < $liraQuantity ||
+            $paraHeld < $paraQuantity ||
+            $liraReserved < $liraQuantity ||
+            $paraReserved < $paraQuantity
+        ) {
+            throw new RuntimeException('Reserved customer holdings do not match this request.');
         }
 
         $now = gmdate('c');
-        $request['status'] = 'completed';
-        $request['completedAt'] = $now;
-        $request['payoutRecorded'] = true;
-        $financeBalance = (int) ($finance['balanceMinorUnits'] ?? 0) - $amount;
+        $request['status'] = 'money_transferred';
+        $request['transferredAt'] = new FirestoreTimestampValue($now);
+        $request['transferredBy'] = 'master@master.com';
         $ledgerEntry = [
             'type' => 'customer_buyback',
             'status' => 'completed',
-            'source' => 'instapay_manual',
+            'source' => 'instapay',
             'buybackRequestId' => $id,
-            'customerUid' => (string) ($request['customerUid'] ?? ''),
+            'customerUid' => $customerUid,
             'liraQuantity' => $liraQuantity,
             'paraQuantity' => $paraQuantity,
-            'liraUnitPriceMinor' => (int) ($request['liraUnitPriceMinor'] ?? 0),
-            'paraUnitPriceMinor' => (int) ($request['paraUnitPriceMinor'] ?? 0),
-            'amountMinorUnits' => -$amount,
-            'payoutAmountMinorUnits' => $amount,
-            'createdAt' => $now,
+            'liraUnitPriceMinor' => $liraUnitPriceMinor,
+            'paraUnitPriceMinor' => $paraUnitPriceMinor,
+            'amountMinorUnits' => $amount,
+            'createdAt' => new FirestoreTimestampValue($now),
+            'confirmedAt' => new FirestoreTimestampValue($now),
         ];
 
         $writes = [
-            $this->inventoryWrite($liraPath, $lira, (int) ($lira['quantity'] ?? 0) + $liraQuantity, (int) ($lira['reserved'] ?? 0)),
-            $this->inventoryWrite($paraPath, $para, (int) ($para['quantity'] ?? 0) + $paraQuantity, (int) ($para['reserved'] ?? 0)),
-            $finance === null
-                ? $this->store->createWrite($financePath, ['balanceMinorUnits' => $financeBalance, 'updatedAt' => $now])
-                : $this->store->updateWrite($financePath, ['balanceMinorUnits' => $financeBalance, 'updatedAt' => $now]),
+            $this->store->updateWrite($portfolioPath, [
+                'liraQuantity' => $liraHeld - $liraQuantity,
+                'paraQuantity' => $paraHeld - $paraQuantity,
+                'reservedLiraQuantity' => $liraReserved - $liraQuantity,
+                'reservedParaQuantity' => $paraReserved - $paraQuantity,
+                'updatedAt' => $now,
+            ]),
             $this->store->updateWrite($requestPath, $request),
             $this->store->createWrite($ledgerPath, $ledgerEntry),
         ];
+        if ($liraQuantity > 0) {
+            $writes[] = $this->inventoryWrite($liraPath, $lira, (int) ($lira['quantity'] ?? 0) + $liraQuantity, (int) ($lira['reserved'] ?? 0));
+        }
+        if ($paraQuantity > 0) {
+            $writes[] = $this->inventoryWrite($paraPath, $para, (int) ($para['quantity'] ?? 0) + $paraQuantity, (int) ($para['reserved'] ?? 0));
+        }
         $this->store->commit($transaction, $writes);
 
         return true;

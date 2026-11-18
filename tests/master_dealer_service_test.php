@@ -181,20 +181,32 @@ try {
 
     writeMasterDealerPriceCache($goldCache, 'XAU', 2600.0);
     writeMasterDealerPriceCache($silverCache, 'XAG', 110.0);
+    $store->seed('customerPortfolios/customer-1', [
+        'liraQuantity' => 10,
+        'paraQuantity' => 10,
+        'reservedLiraQuantity' => 0,
+        'reservedParaQuantity' => 0,
+        'updatedAt' => gmdate(DateTimeInterface::ATOM),
+    ]);
     $buybacks = new MasterDealerBuybackService($store, $pricing);
     $buyback = $buybacks->submit('customer-1', 'customer@example.com', 2, 3, '+20 (123) 456-7890', 'buyback-test-key-001');
-    assertMasterDealer($buyback['instaPayPhone'] === '+20 (123) 456-7890', 'Buyback InstaPay phone was not saved.');
+    assertMasterDealer($buyback['instapayPhone'] === '+20 (123) 456-7890', 'Buyback InstaPay phone was not saved.');
     assertMasterDealer($buyback['liraUnitPriceMinor'] === 2700 && $buyback['paraUnitPriceMinor'] === 11100, 'Buyback prices were not locked at submission.');
-    assertMasterDealer($buyback['totalAmountMinorUnits'] === 38700, 'Buyback payout total is incorrect.');
+    assertMasterDealer($buyback['totalPayoutMinor'] === 38700, 'Buyback payout total is incorrect.');
+    assertMasterDealer($buyback['status'] === 'processing', 'Flutter sell requests must start in processing.');
     assertMasterDealer(($buybacks->request($buyback['id'])['id'] ?? null) === $buyback['id'], 'Buyback request details were not retrievable.');
-    assertMasterDealer($buybacks->startProcessing($buyback['id']), 'Buyback processing transition failed.');
-    assertMasterDealer(!$buybacks->startProcessing($buyback['id']), 'Repeated processing transition should not change the request.');
 
     writeMasterDealerPriceCache($goldCache, 'XAU', 3000.0);
     writeMasterDealerPriceCache($silverCache, 'XAG', 120.0);
     assertMasterDealer($buybacks->complete($buyback['id']), 'Buyback completion failed.');
     assertMasterDealer(!$buybacks->complete($buyback['id']), 'Buyback completion must be idempotent.');
     assertMasterDealer($inventory->summary()['lira']['quantity'] === 82 && $inventory->summary()['para']['quantity'] === 43, 'Buyback did not add the expected inventory exactly once.');
+    assertMasterDealer($store->document('customerPortfolios/customer-1')['liraQuantity'] === 8, 'Customer LIRA holdings were not deducted.');
+    assertMasterDealer($store->document('customerPortfolios/customer-1')['paraQuantity'] === 7, 'Customer PARA holdings were not deducted.');
+    assertMasterDealer($store->document('customerPortfolios/customer-1')['reservedLiraQuantity'] === 0, 'Customer LIRA reservation was not released.');
+    assertMasterDealer($store->document('customerPortfolios/customer-1')['reservedParaQuantity'] === 0, 'Customer PARA reservation was not released.');
+    assertMasterDealer($store->document('masterDealerSellRequests/' . $buyback['id'])['status'] === 'money_transferred', 'Sell request status was not transferred.');
+    assertMasterDealer($store->document('masterDealerTransactions/buyback-' . $buyback['id'])['type'] === 'customer_buyback', 'Buyback transaction history was not recorded.');
 
     $ledger = $transactions->history();
     $financialMovements = array_values(array_filter(
@@ -203,8 +215,8 @@ try {
     ));
     $ledgerBalance = array_sum(array_map(static fn (array $entry): int => (int) ($entry['amountMinorUnits'] ?? 0), $financialMovements));
     assertMasterDealer(count($financialMovements) === 2, 'Each purchase and buyback should create exactly one financial transaction.');
-    assertMasterDealer($ledgerBalance === 126300, 'Financial transaction records do not net to the expected balance.');
-    assertMasterDealer((new MasterDealerFinancialService($store))->summary()['balanceMinorUnits'] === $ledgerBalance, 'Financial balance does not reconcile to transaction records.');
+    assertMasterDealer($ledgerBalance === 203700, 'Purchase and buyback transaction records did not reconcile.');
+    assertMasterDealer((new MasterDealerFinancialService($store))->summary()['balanceMinorUnits'] === 165000, 'Buyback must not change the purchase cash balance.');
     assertMasterDealer(count($inventory->movements()) === 4, 'Opening adjustments, purchase, and buyback movements must all be recorded.');
 
     echo json_encode([

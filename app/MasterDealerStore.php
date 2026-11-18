@@ -2,6 +2,18 @@
 
 declare(strict_types=1);
 
+final class FirestoreTimestampValue
+{
+    public function __construct(public readonly string $value)
+    {
+    }
+
+    public function __toString(): string
+    {
+        return $this->value;
+    }
+}
+
 class MasterDealerStore
 {
     public function __construct(
@@ -108,6 +120,9 @@ class MasterDealerStore
      */
     private function encodeValue(mixed $value): array
     {
+        if ($value instanceof FirestoreTimestampValue) {
+            return ['timestampValue' => $value->value];
+        }
         if (is_string($value)) {
             return ['stringValue' => $value];
         }
