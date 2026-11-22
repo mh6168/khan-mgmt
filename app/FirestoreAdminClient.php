@@ -307,10 +307,6 @@ class FirestoreAdminClient
             return;
         }
 
-        if ($currentStatus !== 'reserved_for_48_hours') {
-            throw new InvalidArgumentException('A completed reservation status cannot be changed.');
-        }
-
         $expiryValue = $reservation['reservationExpiresAt'] ?? $reservation['expiresAt'] ?? null;
         if (!is_string($expiryValue) || $expiryValue === '') {
             throw new InvalidArgumentException('The reservation deadline is unavailable.');
@@ -330,7 +326,24 @@ class FirestoreAdminClient
             if ($deadline > $checkTime) {
                 throw new InvalidArgumentException('The customer can only be marked not collected after the 48-hour deadline.');
             }
-        } elseif ($targetStatus !== 'reserved_for_48_hours' && $deadline <= $checkTime) {
+            if (!in_array($currentStatus, ['reserved_for_48_hours', 'handed_to_user'], true)) {
+                throw new InvalidArgumentException('A refunded reservation cannot be changed to not collected.');
+            }
+        } elseif ($targetStatus === 'reserved_for_48_hours') {
+            if ($deadline <= $checkTime) {
+                throw new InvalidArgumentException('An expired reservation cannot be changed back to active.');
+            }
+            if (!in_array($currentStatus, ['reserved_for_48_hours', 'handed_to_user', 'refunded_deposit'], true)) {
+                throw new InvalidArgumentException('This reservation status cannot be changed back to active.');
+            }
+        } elseif ($targetStatus === 'handed_to_user' || $targetStatus === 'refunded_deposit') {
+            if ($deadline <= $checkTime) {
+                throw new InvalidArgumentException('This reservation is past its deadline.');
+            }
+            if (!in_array($currentStatus, ['reserved_for_48_hours', 'handed_to_user', 'refunded_deposit'], true)) {
+                throw new InvalidArgumentException('This reservation status cannot be changed to the selected outcome.');
+            }
+        } else {
             throw new InvalidArgumentException('This reservation is past its deadline.');
         }
     }

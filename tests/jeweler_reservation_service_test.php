@@ -7,6 +7,22 @@ require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATO
 require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirestoreAdminClient.php';
 
 try {
+    $reservationView = file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'views' . DIRECTORY_SEPARATOR . 'jeweler' . DIRECTORY_SEPARATOR . 'partials' . DIRECTORY_SEPARATOR . 'reservations.php');
+    $reservationScript = file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . 'jeweler-dashboard.js');
+    if (!is_string($reservationView) || !str_contains($reservationView, 'data-reservation-status-form')) {
+        throw new RuntimeException('Reservation status form is missing.');
+    }
+    if (str_contains($reservationView, 'name="ajax" value="1"')) {
+        throw new RuntimeException('Reservation form must not force a JSON-only fallback page.');
+    }
+    if (!is_string($reservationScript) ||
+        !str_contains($reservationScript, "matches('[data-reservation-status-form]')") ||
+        !str_contains($reservationScript, 'event.preventDefault()') ||
+        !str_contains($reservationScript, "Accept: 'application/json'")
+    ) {
+        throw new RuntimeException('Reservation status AJAX submit handler is incomplete.');
+    }
+
     $baseReservation = [
         'jewelerId' => 'jeweler_test',
         'status' => 'reserved_for_48_hours',
@@ -64,15 +80,71 @@ try {
         }
     }
 
+    FirestoreAdminClient::validateJewelryReservationStatus(
+        array_merge($baseReservation, ['status' => 'handed_to_user']),
+        $baseProduct,
+        'jeweler_test',
+        'refunded_deposit',
+        new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+    );
+
+    FirestoreAdminClient::validateJewelryReservationStatus(
+        array_merge($baseReservation, ['status' => 'handed_to_user']),
+        $baseProduct,
+        'jeweler_test',
+        'reserved_for_48_hours',
+        new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+    );
+
+    FirestoreAdminClient::validateJewelryReservationStatus(
+        array_merge($baseReservation, ['status' => 'handed_to_user']),
+        $baseProduct,
+        'jeweler_test',
+        'user_didnt_pick_up',
+        new DateTimeImmutable('2026-11-23T00:00:00+00:00')
+    );
+
+    FirestoreAdminClient::validateJewelryReservationStatus(
+        array_merge($baseReservation, ['status' => 'refunded_deposit']),
+        $baseProduct,
+        'jeweler_test',
+        'handed_to_user',
+        new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+    );
+
     try {
         FirestoreAdminClient::validateJewelryReservationStatus(
             array_merge($baseReservation, ['status' => 'handed_to_user']),
             $baseProduct,
             'jeweler_test',
             'refunded_deposit',
-            new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+            new DateTimeImmutable('2026-11-23T00:00:00+00:00')
         );
-        throw new RuntimeException('Terminal reservation statuses must not be changed.');
+        throw new RuntimeException('Collected and refund outcomes must not be selected after expiry.');
+    } catch (InvalidArgumentException) {
+    }
+
+    try {
+        FirestoreAdminClient::validateJewelryReservationStatus(
+            array_merge($baseReservation, ['status' => 'refunded_deposit']),
+            $baseProduct,
+            'jeweler_test',
+            'user_didnt_pick_up',
+            new DateTimeImmutable('2026-11-23T00:00:00+00:00')
+        );
+        throw new RuntimeException('A refunded reservation must not be changed to not collected.');
+    } catch (InvalidArgumentException) {
+    }
+
+    try {
+        FirestoreAdminClient::validateJewelryReservationStatus(
+            array_merge($baseReservation, ['status' => 'user_didnt_pick_up']),
+            $baseProduct,
+            'jeweler_test',
+            'handed_to_user',
+            new DateTimeImmutable('2026-11-23T00:00:00+00:00')
+        );
+        throw new RuntimeException('A not-collected reservation must not be changed after the deadline.');
     } catch (InvalidArgumentException) {
     }
 

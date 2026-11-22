@@ -1,3 +1,93 @@
+const reservationStatusLabels = {
+    reserved_for_48_hours: 'Reserved – Awaiting Pickup',
+    handed_to_user: 'Collected by Customer',
+    refunded_deposit: 'Deposit Refunded',
+    user_didnt_pick_up: 'Not Collected – 48 Hours Expired',
+};
+const reservationStatusClasses = {
+    reserved_for_48_hours: 'reserved',
+    handed_to_user: 'handed',
+    refunded_deposit: 'refunded',
+    user_didnt_pick_up: 'expired',
+};
+
+document.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('[data-reservation-status-form]')) {
+        return;
+    }
+
+    event.preventDefault();
+    const submitButton = form.querySelector('[data-reservation-status-save]');
+    const message = form.querySelector('[data-reservation-status-message]');
+    const select = form.querySelector('[data-reservation-status]');
+    const card = form.closest('[data-reservation-card]');
+    const badge = card?.querySelector('.reservation-status');
+
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Saving...';
+    }
+    if (message) {
+        message.textContent = '';
+        message.className = 'reservation-status-message';
+    }
+
+    void (async () => {
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: new FormData(form),
+                credentials: 'same-origin',
+            });
+
+            const contentType = response.headers.get('content-type') || '';
+            let result;
+            if (contentType.includes('application/json')) {
+                result = await response.json();
+            } else {
+                const text = await response.text();
+                try {
+                    result = JSON.parse(text);
+                } catch {
+                    throw new Error('The server did not return a valid JSON response.');
+                }
+            }
+
+            if (!response.ok || result?.success !== true) {
+                throw new Error(result?.message || 'The reservation status could not be updated.');
+            }
+
+            if (badge) {
+                badge.textContent = reservationStatusLabels[result.status] || 'Status unavailable';
+                badge.className = `reservation-status ${reservationStatusClasses[result.status] || 'unknown'}`;
+            }
+            if (select) select.disabled = result.status === 'user_didnt_pick_up';
+            if (submitButton) {
+                submitButton.disabled = result.status === 'user_didnt_pick_up';
+                submitButton.textContent = 'Save status';
+            }
+            if (message) {
+                message.textContent = 'Reservation status updated successfully.';
+                message.classList.add('success');
+            }
+        } catch (error) {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Save status';
+            }
+            if (message) {
+                message.textContent = error instanceof Error ? error.message : 'The reservation status could not be updated.';
+                message.classList.add('error');
+            }
+        }
+    })();
+});
+
 const goldPrices = window.khanGoldPrices || {};
     const productDialog = document.getElementById('product-dialog');
     const typeInput = document.getElementById('product-type-input');
@@ -105,65 +195,3 @@ const goldPrices = window.khanGoldPrices || {};
     setProductType(typeInput.value);
     updateJewelryPrice();
 
-    const reservationStatusLabels = {
-        reserved_for_48_hours: 'Reserved – Awaiting Pickup',
-        handed_to_user: 'Collected by Customer',
-        refunded_deposit: 'Deposit Refunded',
-        user_didnt_pick_up: 'Not Collected – 48 Hours Expired',
-    };
-    const reservationStatusClasses = {
-        reserved_for_48_hours: 'reserved',
-        handed_to_user: 'handed',
-        refunded_deposit: 'refunded',
-        user_didnt_pick_up: 'expired',
-    };
-
-    document.querySelectorAll('[data-reservation-status-form]').forEach((form) => {
-        form.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const submitButton = form.querySelector('[data-reservation-status-save]');
-            const message = form.querySelector('[data-reservation-status-message]');
-            const select = form.querySelector('[data-reservation-status]');
-            submitButton.disabled = true;
-            submitButton.textContent = 'Saving...';
-            message.textContent = '';
-            message.className = 'reservation-status-message';
-
-            try {
-                const response = await fetch(window.location.href, {
-                    method: 'POST',
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                    body: new FormData(form),
-                });
-                const result = await response.json();
-                if (!response.ok || result.success !== true) {
-                    throw new Error(result.message || 'The reservation status could not be updated.');
-                }
-
-                const card = form.closest('[data-reservation-card]');
-                const badge = card?.querySelector('.reservation-status');
-                if (badge) {
-                    badge.textContent = reservationStatusLabels[result.status] || 'Status unavailable';
-                    badge.className = `reservation-status ${reservationStatusClasses[result.status] || 'unknown'}`;
-                }
-
-                if (result.status !== 'reserved_for_48_hours') {
-                    select.disabled = true;
-                    submitButton.disabled = true;
-                } else {
-                    submitButton.disabled = false;
-                }
-                submitButton.textContent = 'Save status';
-                message.textContent = 'Reservation status updated successfully.';
-                message.classList.add('success');
-            } catch (error) {
-                submitButton.disabled = false;
-                submitButton.textContent = 'Save status';
-                message.textContent = error instanceof Error ? error.message : 'The reservation status could not be updated.';
-                message.classList.add('error');
-            }
-        });
-    });

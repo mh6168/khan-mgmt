@@ -30,12 +30,19 @@ No Paymob refund request is made. `refunded_deposit` means the jeweler has confi
 
 ### Transition restrictions
 
-- `handed_to_user` and `refunded_deposit` require the current status to be `reserved_for_48_hours` and require the reservation deadline not to have passed.
-- `user_didnt_pick_up` requires the current status to be `reserved_for_48_hours` and requires `reservationExpiresAt` or `expiresAt` to be in the past.
-- A reservation already in `handed_to_user`, `refunded_deposit`, or `user_didnt_pick_up` is terminal and cannot be changed.
+- `handed_to_user` and `refunded_deposit` require the reservation deadline not to have passed. They may be selected from `reserved_for_48_hours`, `handed_to_user`, or `refunded_deposit` for status corrections.
+- `reserved_for_48_hours` may be restored from `handed_to_user` or `refunded_deposit` only before the deadline.
+- `user_didnt_pick_up` requires `reservationExpiresAt` or `expiresAt` to be in the past and is allowed only from `reserved_for_48_hours` or `handed_to_user`. It is rejected from `refunded_deposit`.
+- `user_didnt_pick_up` is terminal and cannot be corrected to another status.
 - Unknown status values are rejected.
 
 The dashboard form uses AJAX with the existing CSRF token. On success it updates the status badge and success message in the current card. Regular form submission remains supported through redirect/status notice handling.
+
+### AJAX white-response fix
+
+The reservation status form has an explicit dashboard `action` and submits through a document-level `submit` listener. JavaScript calls `event.preventDefault()` before `fetch()` and sends the form data with `Accept: application/json`.
+
+The JavaScript reads the success or error JSON, updates the matching reservation badge in place, and renders a success or error message. It does not navigate to or display the JSON endpoint. The form has no JSON-only fallback hidden field, so a native fallback submission redirects back to the reservations dashboard instead of exposing the JSON response as a page.
 
 ### Flutter synchronization
 

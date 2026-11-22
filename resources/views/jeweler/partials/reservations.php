@@ -44,7 +44,7 @@
     $remaining = $minorAmount($reservation, 'remainingBalanceMinorUnits', 'remainingBalanceEgp');
     $expiresAt = $reservation['reservationExpiresAt'] ?? $reservation['expiresAt'] ?? '';
     $expiresIso = is_string($expiresAt) ? $expiresAt : '';
-    $isTerminal = in_array($status, ['handed_to_user', 'refunded_deposit', 'user_didnt_pick_up'], true);
+    $isNotCollected = $status === 'user_didnt_pick_up';
     $isExpired = false;
     if ($expiresIso !== '') {
         try {
@@ -53,6 +53,7 @@
             $isExpired = false;
         }
     }
+    $isLocked = $isNotCollected || ($status === 'refunded_deposit' && $isExpired);
 ?>
                     <article class="reservation-card" data-reservation-card="<?= JewelerSession::escape((string) ($reservation['id'] ?? '')) ?>">
                         <div class="reservation-image">
@@ -80,10 +81,14 @@
                                 <div><span>Deposit paid</span><strong><?= JewelerSession::escape($formatAmount($deposit)) ?></strong></div>
                                 <div><span>Balance at pickup</span><strong><?= JewelerSession::escape($formatAmount($remaining)) ?></strong></div>
                             </div>
-                            <form class="reservation-status-form" method="post" data-reservation-status-form>
+                            <form
+                                class="reservation-status-form"
+                                method="post"
+                                action="<?= JewelerSession::escape(JewelerSession::url('/jeweler/dashboard.php?view=reservations')) ?>"
+                                data-reservation-status-form
+                            >
                                 <input type="hidden" name="_csrf" value="<?= JewelerSession::escape($csrfToken) ?>">
                                 <input type="hidden" name="action" value="reservation_status">
-                                <input type="hidden" name="ajax" value="1">
                                 <input type="hidden" name="reservationId" value="<?= JewelerSession::escape((string) ($reservation['id'] ?? '')) ?>">
                                 <label for="reservation-status-<?= JewelerSession::escape((string) ($reservation['id'] ?? '')) ?>">Update reservation status</label>
                                 <select
@@ -91,14 +96,14 @@
                                     name="reservationStatus"
                                     data-reservation-status
                                     data-expires-at="<?= JewelerSession::escape($expiresIso) ?>"
-                                    <?= $isTerminal ? 'disabled' : '' ?>
+                                    <?= $isLocked ? 'disabled' : '' ?>
                                 >
-                                    <option value="reserved_for_48_hours" <?= $status === 'reserved_for_48_hours' ? 'selected' : '' ?>>Reserved – Awaiting Pickup</option>
+                                    <option value="reserved_for_48_hours" <?= $status === 'reserved_for_48_hours' ? 'selected' : '' ?> <?= $isExpired ? 'disabled' : '' ?>>Reserved – Awaiting Pickup</option>
                                     <option value="handed_to_user" <?= $status === 'handed_to_user' ? 'selected' : '' ?> <?= $isExpired ? 'disabled' : '' ?>>Collected by Customer</option>
                                     <option value="refunded_deposit" <?= $status === 'refunded_deposit' ? 'selected' : '' ?> <?= $isExpired ? 'disabled' : '' ?>>Deposit Refunded</option>
                                     <option value="user_didnt_pick_up" <?= $status === 'user_didnt_pick_up' ? 'selected' : '' ?> <?= !$isExpired ? 'disabled' : '' ?>>Not Collected – 48 Hours Expired</option>
                                 </select>
-                                <button class="button small" type="submit" <?= $isTerminal ? 'disabled' : '' ?> data-reservation-status-save>Save status</button>
+                                <button class="button small" type="submit" <?= $isLocked ? 'disabled' : '' ?> data-reservation-status-save>Save status</button>
                                 <span class="reservation-status-message" data-reservation-status-message role="status"></span>
                             </form>
                         </div>
