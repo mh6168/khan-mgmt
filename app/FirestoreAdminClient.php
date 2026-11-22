@@ -235,6 +235,41 @@ class FirestoreAdminClient
     /**
      * @return list<array<string, mixed>>
      */
+    public function listJewelryReservationsByJeweler(string $jewelerUid): array
+    {
+        if ($jewelerUid === '' || preg_match('/^[A-Za-z0-9_-]+$/', $jewelerUid) !== 1) {
+            throw new InvalidArgumentException('Jeweler identifier is invalid.');
+        }
+
+        $products = $this->collection('products');
+        $ownedProductIds = [];
+        foreach ($products as $product) {
+            if (($product['jewelerId'] ?? null) === $jewelerUid) {
+                $ownedProductIds[(string) ($product['id'] ?? '')] = true;
+            }
+        }
+
+        $reservations = [];
+        foreach ($this->collection('jewelryReservations') as $reservation) {
+            $reservationJewelerId = $reservation['jewelerId'] ?? null;
+            $productId = (string) ($reservation['productId'] ?? '');
+            if ($reservationJewelerId === $jewelerUid && isset($ownedProductIds[$productId])) {
+                $reservations[] = $reservation;
+            }
+        }
+
+        usort($reservations, static function (array $left, array $right): int {
+            $leftDate = (string) ($left['reservationCreatedAt'] ?? $left['createdAt'] ?? '');
+            $rightDate = (string) ($right['reservationCreatedAt'] ?? $right['createdAt'] ?? '');
+            return strcmp($rightDate, $leftDate);
+        });
+
+        return $reservations;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
     private function listDocuments(string $collection): array
     {
         $documents = [];

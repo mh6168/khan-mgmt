@@ -206,6 +206,14 @@ All API calls that create a purchase or buyback require Firebase token verificat
 
 The PHP repository does not contain an authoritative customer Lira/Para holdings ledger or the Flutter source. The buyback API binds a request to the verified Firebase UID, but cannot independently prove that the customer owns the submitted quantities. Connect it to the mobile system’s trusted holdings ledger before treating requests as production-validated buybacks; client-supplied counts alone are not proof of ownership.
 
+## Jeweler reservations
+
+The jeweler dashboard reads authoritative Flutter-created documents from the shared `khan-81cd6` Firestore project. `FirestoreAdminClient::listJewelryReservationsByJeweler()` reads `jewelryReservations`, verifies that the document's `jewelerId` equals the authenticated Firebase UID, and verifies that `productId` belongs to that same UID in `products`. It does not create, duplicate, or complete reservations.
+
+Reservation records use the Flutter fields `customerUid`, `customerName`, `customerEmail`, `customerPhone`, `productId`, `productName`, `productImagePath`, `jewelerId`, `jewelerStoreName`, integer minor-unit totals and deposit fields, timestamp fields, and exact status strings. Dates and integers are decoded from Firestore REST value types before display. Supabase product images are converted to short-lived signed URLs.
+
+The PHP page is intentionally read-only. Status changes remain controlled by the existing Flutter reservation implementation; it may mark an expired `reserved_for_48_hours` record as `user_didnt_pick_up` when a customer opens My Orders. The PHP dashboard displays all four existing status values but does not implement the 25% KHAN / 75% jeweler non-refund split or any delivery workflow.
+
 ## Tests and checks
 
 Composer and a test runner are not configured. Run PHP syntax checks from PowerShell with:

@@ -9,6 +9,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'JewelerSession.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'GoldPriceService.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'JewelerProductService.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'SupabaseStorageClient.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'FirestoreAdminClient.php';
 
 $claims = JewelerSession::requireAuthenticated();
 $uid = JewelerSession::uid($claims);
@@ -223,6 +224,28 @@ foreach ($products as &$product) {
     }
 }
 unset($product);
+
+$reservations = [];
+try {
+    $reservationFirestore = FirestoreAdminClient::fromEnvironment();
+    $reservations = $reservationFirestore->listJewelryReservationsByJeweler($uid);
+} catch (Throwable $exception) {
+    error_log('Jeweler reservation listing failed: ' . get_class($exception) . '.');
+    $errorMessage ??= 'Reservation listings are temporarily unavailable.';
+}
+
+foreach ($reservations as &$reservation) {
+    $reservation['productImageUrl'] = null;
+    $imagePath = $reservation['productImagePath'] ?? null;
+    if ($storage !== null && is_string($imagePath) && $imagePath !== '') {
+        try {
+            $reservation['productImageUrl'] = $storage->createSignedUrl($imagePath, 600);
+        } catch (Throwable) {
+            $reservation['productImageUrl'] = null;
+        }
+    }
+}
+unset($reservation);
 
 $goldData = GoldPriceService::fromEnvironment()->latest();
 $goldPrices = [];
