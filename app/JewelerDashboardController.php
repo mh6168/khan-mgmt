@@ -94,6 +94,17 @@ $uploadedProductFiles = static function (array $files): array {
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $postedToken = $_POST['_csrf'] ?? '';
     if (!is_string($postedToken) || !hash_equals($csrfToken, $postedToken)) {
+        $isJsonRequest = (isset($_POST['ajax']) && $_POST['ajax'] === '1')
+            || str_contains(strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? '')), 'application/json');
+        if ($isJsonRequest) {
+            http_response_code(400);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => false,
+                'message' => 'Your session could not be verified. Refresh the page and try again.',
+            ], JSON_UNESCAPED_SLASHES);
+            exit;
+        }
         http_response_code(400);
         $errorMessage = 'Your session could not be verified. Refresh the page and try again.';
     } elseif ($storage === null && in_array((string) ($_POST['action'] ?? ''), ['create', 'update'], true)) {
@@ -103,6 +114,27 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $productId = trim((string) ($_POST['productId'] ?? ''));
         $uploadedPaths = [];
         try {
+            if ($action === 'reservation_status') {
+                $reservationId = trim((string) ($_POST['reservationId'] ?? ''));
+                $reservationStatus = trim((string) ($_POST['reservationStatus'] ?? ''));
+                $reservationFirestore = FirestoreAdminClient::fromEnvironment();
+                $reservationFirestore->updateJewelryReservationStatus($reservationId, $uid, $reservationStatus);
+
+                $isJsonRequest = (isset($_POST['ajax']) && $_POST['ajax'] === '1')
+                    || str_contains(strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? '')), 'application/json');
+                if ($isJsonRequest) {
+                    header('Content-Type: application/json');
+                    echo json_encode([
+                        'success' => true,
+                        'status' => $reservationStatus,
+                    ], JSON_UNESCAPED_SLASHES);
+                    exit;
+                }
+
+                header('Location: ' . JewelerSession::url('/jeweler/dashboard.php?view=reservations&reservation_status=updated'), true, 303);
+                exit;
+            }
+
             if ($action === 'create' || $action === 'update') {
                 $productType = (string) ($_POST['productType'] ?? '');
                 $existingProduct = null;
@@ -190,6 +222,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     error_log('Unable to clean up product photos after a failed product operation.');
                 }
             }
+
+            $isReservationStatusJson = $action === 'reservation_status'
+                && (
+                    (isset($_POST['ajax']) && $_POST['ajax'] === '1')
+                    || str_contains(strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? '')), 'application/json')
+                );
+            if ($isReservationStatusJson) {
+                $statusCode = $exception instanceof FirestoreException && $exception->httpStatus() === 403 ? 403 : 400;
+                if ($exception instanceof FirestoreException && $exception->httpStatus() >= 500) {
+                    $statusCode = $exception->httpStatus();
+                }
+                $message = $exception instanceof InvalidArgumentException
+                    ? $exception->getMessage()
+                    : ($exception instanceof FirestoreException && $exception->httpStatus() === 403
+                        ? 'This reservation could not be accessed with your account.'
+                        : 'The reservation status could not be updated.');
+                http_response_code($statusCode);
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => $message], JSON_UNESCAPED_SLASHES);
+                exit;
+            }
+
             if ($exception instanceof FirestoreException || $exception instanceof SupabaseStorageException) {
                 error_log('Jeweler product action failed: ' . get_class($exception) . '.');
                 $errorMessage = $exception->httpStatus() === 403

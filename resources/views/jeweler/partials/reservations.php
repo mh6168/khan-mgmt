@@ -9,10 +9,10 @@
 <?php
     $status = (string) ($reservation['status'] ?? '');
     $statusLabels = [
-        'reserved_for_48_hours' => 'Reserved for 48 hours',
-        'handed_to_user' => 'Handed to customer',
-        'refunded_deposit' => 'Deposit refunded',
-        'user_didnt_pick_up' => 'Not collected',
+        'reserved_for_48_hours' => 'Reserved – Awaiting Pickup',
+        'handed_to_user' => 'Collected by Customer',
+        'refunded_deposit' => 'Deposit Refunded',
+        'user_didnt_pick_up' => 'Not Collected – 48 Hours Expired',
     ];
     $statusLabel = $statusLabels[$status] ?? 'Status unavailable';
     $statusClass = match ($status) {
@@ -42,8 +42,19 @@
     $total = $minorAmount($reservation, 'originalTotalPriceMinorUnits', 'originalTotalPriceEgp');
     $deposit = $minorAmount($reservation, 'depositAmountMinorUnits', 'depositAmountEgp');
     $remaining = $minorAmount($reservation, 'remainingBalanceMinorUnits', 'remainingBalanceEgp');
+    $expiresAt = $reservation['reservationExpiresAt'] ?? $reservation['expiresAt'] ?? '';
+    $expiresIso = is_string($expiresAt) ? $expiresAt : '';
+    $isTerminal = in_array($status, ['handed_to_user', 'refunded_deposit', 'user_didnt_pick_up'], true);
+    $isExpired = false;
+    if ($expiresIso !== '') {
+        try {
+            $isExpired = (new DateTimeImmutable($expiresIso)) <= new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        } catch (Exception) {
+            $isExpired = false;
+        }
+    }
 ?>
-                    <article class="reservation-card">
+                    <article class="reservation-card" data-reservation-card="<?= JewelerSession::escape((string) ($reservation['id'] ?? '')) ?>">
                         <div class="reservation-image">
 <?php if (is_string($reservation['productImageUrl'] ?? null) && $reservation['productImageUrl'] !== ''): ?>
                             <img src="<?= JewelerSession::escape($reservation['productImageUrl']) ?>" alt="<?= JewelerSession::escape((string) ($reservation['productName'] ?? 'Reserved product')) ?>">
@@ -69,6 +80,27 @@
                                 <div><span>Deposit paid</span><strong><?= JewelerSession::escape($formatAmount($deposit)) ?></strong></div>
                                 <div><span>Balance at pickup</span><strong><?= JewelerSession::escape($formatAmount($remaining)) ?></strong></div>
                             </div>
+                            <form class="reservation-status-form" method="post" data-reservation-status-form>
+                                <input type="hidden" name="_csrf" value="<?= JewelerSession::escape($csrfToken) ?>">
+                                <input type="hidden" name="action" value="reservation_status">
+                                <input type="hidden" name="ajax" value="1">
+                                <input type="hidden" name="reservationId" value="<?= JewelerSession::escape((string) ($reservation['id'] ?? '')) ?>">
+                                <label for="reservation-status-<?= JewelerSession::escape((string) ($reservation['id'] ?? '')) ?>">Update reservation status</label>
+                                <select
+                                    id="reservation-status-<?= JewelerSession::escape((string) ($reservation['id'] ?? '')) ?>"
+                                    name="reservationStatus"
+                                    data-reservation-status
+                                    data-expires-at="<?= JewelerSession::escape($expiresIso) ?>"
+                                    <?= $isTerminal ? 'disabled' : '' ?>
+                                >
+                                    <option value="reserved_for_48_hours" <?= $status === 'reserved_for_48_hours' ? 'selected' : '' ?>>Reserved – Awaiting Pickup</option>
+                                    <option value="handed_to_user" <?= $status === 'handed_to_user' ? 'selected' : '' ?> <?= $isExpired ? 'disabled' : '' ?>>Collected by Customer</option>
+                                    <option value="refunded_deposit" <?= $status === 'refunded_deposit' ? 'selected' : '' ?> <?= $isExpired ? 'disabled' : '' ?>>Deposit Refunded</option>
+                                    <option value="user_didnt_pick_up" <?= $status === 'user_didnt_pick_up' ? 'selected' : '' ?> <?= !$isExpired ? 'disabled' : '' ?>>Not Collected – 48 Hours Expired</option>
+                                </select>
+                                <button class="button small" type="submit" <?= $isTerminal ? 'disabled' : '' ?> data-reservation-status-save>Save status</button>
+                                <span class="reservation-status-message" data-reservation-status-message role="status"></span>
+                            </form>
                         </div>
                     </article>
 <?php endforeach; ?>

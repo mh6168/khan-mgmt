@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'FirestoreClient.php';
+
 class FirestoreAdminClient
 {
     private const API_BASE_URL = 'https://firestore.googleapis.com/v1/projects/';
@@ -265,6 +267,106 @@ class FirestoreAdminClient
         });
 
         return $reservations;
+    }
+
+    /**
+     * Validate and update a reservation status owned by the authenticated jeweler.
+     *
+     * @param array<string, mixed> $reservation
+     * @param array<string, mixed> $product
+     */
+    public static function validateJewelryReservationStatus(
+        array $reservation,
+        array $product,
+        string $jewelerUid,
+        string $targetStatus,
+        ?DateTimeImmutable $now = null
+    ): void {
+        if ($jewelerUid === '' || preg_match('/^[A-Za-z0-9_-]+$/', $jewelerUid) !== 1) {
+            throw new InvalidArgumentException('Jeweler identifier is invalid.');
+        }
+
+        if (($reservation['jewelerId'] ?? null) !== $jewelerUid ||
+            ($product['jewelerId'] ?? null) !== $jewelerUid
+        ) {
+            throw new FirestoreException('Reservation access was denied.', 403);
+        }
+
+        $allowedStatuses = [
+            'reserved_for_48_hours',
+            'handed_to_user',
+            'refunded_deposit',
+            'user_didnt_pick_up',
+        ];
+        if (!in_array($targetStatus, $allowedStatuses, true)) {
+            throw new InvalidArgumentException('Reservation status is invalid.');
+        }
+
+        $currentStatus = (string) ($reservation['status'] ?? 'reserved_for_48_hours');
+        if ($currentStatus === $targetStatus) {
+            return;
+        }
+
+        if ($currentStatus !== 'reserved_for_48_hours') {
+            throw new InvalidArgumentException('A completed reservation status cannot be changed.');
+        }
+
+        $expiryValue = $reservation['reservationExpiresAt'] ?? $reservation['expiresAt'] ?? null;
+        if (!is_string($expiryValue) || $expiryValue === '') {
+            throw new InvalidArgumentException('The reservation deadline is unavailable.');
+        }
+
+        try {
+            $deadline = new DateTimeImmutable($expiryValue);
+        } catch (Exception) {
+            throw new InvalidArgumentException('The reservation deadline is invalid.');
+        }
+
+        $checkTime = $now ?? new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $deadline = $deadline->setTimezone(new DateTimeZone('UTC'));
+        $checkTime = $checkTime->setTimezone(new DateTimeZone('UTC'));
+
+        if ($targetStatus === 'user_didnt_pick_up') {
+            if ($deadline > $checkTime) {
+                throw new InvalidArgumentException('The customer can only be marked not collected after the 48-hour deadline.');
+            }
+        } elseif ($targetStatus !== 'reserved_for_48_hours' && $deadline <= $checkTime) {
+            throw new InvalidArgumentException('This reservation is past its deadline.');
+        }
+    }
+
+    public function updateJewelryReservationStatus(
+        string $reservationId,
+        string $jewelerUid,
+        string $targetStatus
+    ): void {
+        if ($reservationId === '' || preg_match('/^[A-Za-z0-9_-]+$/', $reservationId) !== 1) {
+            throw new InvalidArgumentException('Reservation identifier is invalid.');
+        }
+
+        $reservation = $this->document('jewelryReservations/' . rawurlencode($reservationId));
+        if ($reservation === null) {
+            throw new FirestoreException('Reservation was not found.', 404);
+        }
+
+        $productId = (string) ($reservation['productId'] ?? '');
+        if ($productId === '') {
+            throw new InvalidArgumentException('Reservation product information is unavailable.');
+        }
+
+        $product = $this->document('products/' . rawurlencode($productId));
+        if ($product === null) {
+            throw new FirestoreException('Reservation product was not found.', 404);
+        }
+
+        self::validateJewelryReservationStatus($reservation, $product, $jewelerUid, $targetStatus);
+
+        $this->request(
+            'PATCH',
+            'databases/(default)/documents/jewelryReservations/' . rawurlencode($reservationId)
+                . '?updateMask.fieldPaths=status',
+            ['fields' => ['status' => ['stringValue' => $targetStatus]]]
+        );
     }
 
     /**

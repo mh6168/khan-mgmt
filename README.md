@@ -212,7 +212,7 @@ The jeweler dashboard reads authoritative Flutter-created documents from the sha
 
 Reservation records use the Flutter fields `customerUid`, `customerName`, `customerEmail`, `customerPhone`, `productId`, `productName`, `productImagePath`, `jewelerId`, `jewelerStoreName`, integer minor-unit totals and deposit fields, timestamp fields, and exact status strings. Dates and integers are decoded from Firestore REST value types before display. Supabase product images are converted to short-lived signed URLs.
 
-The PHP page is intentionally read-only. Status changes remain controlled by the existing Flutter reservation implementation; it may mark an expired `reserved_for_48_hours` record as `user_didnt_pick_up` when a customer opens My Orders. The PHP dashboard displays all four existing status values but does not implement the 25% KHAN / 75% jeweler non-refund split or any delivery workflow.
+The PHP jeweler dashboard may update an existing reservation's `status` field to `handed_to_user`, `refunded_deposit`, or `user_didnt_pick_up`. Updates require the authenticated jeweler to own both the reservation's `jewelerId` and the referenced `products/{productId}.jewelerId`. Collected and refund outcomes are allowed only before the 48-hour deadline; not-collected is allowed only after it. Terminal statuses cannot be changed to another status. PHP does not initiate Paymob refunds and does not implement the 25% KHAN / 75% jeweler non-refund split or delivery workflow.
 
 ## Tests and checks
 

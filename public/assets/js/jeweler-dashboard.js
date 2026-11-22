@@ -104,3 +104,66 @@ const goldPrices = window.khanGoldPrices || {};
     [searchInput, typeFilter, availabilityFilter].forEach((input) => input?.addEventListener('input', filterProducts));
     setProductType(typeInput.value);
     updateJewelryPrice();
+
+    const reservationStatusLabels = {
+        reserved_for_48_hours: 'Reserved – Awaiting Pickup',
+        handed_to_user: 'Collected by Customer',
+        refunded_deposit: 'Deposit Refunded',
+        user_didnt_pick_up: 'Not Collected – 48 Hours Expired',
+    };
+    const reservationStatusClasses = {
+        reserved_for_48_hours: 'reserved',
+        handed_to_user: 'handed',
+        refunded_deposit: 'refunded',
+        user_didnt_pick_up: 'expired',
+    };
+
+    document.querySelectorAll('[data-reservation-status-form]').forEach((form) => {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const submitButton = form.querySelector('[data-reservation-status-save]');
+            const message = form.querySelector('[data-reservation-status-message]');
+            const select = form.querySelector('[data-reservation-status]');
+            submitButton.disabled = true;
+            submitButton.textContent = 'Saving...';
+            message.textContent = '';
+            message.className = 'reservation-status-message';
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: new FormData(form),
+                });
+                const result = await response.json();
+                if (!response.ok || result.success !== true) {
+                    throw new Error(result.message || 'The reservation status could not be updated.');
+                }
+
+                const card = form.closest('[data-reservation-card]');
+                const badge = card?.querySelector('.reservation-status');
+                if (badge) {
+                    badge.textContent = reservationStatusLabels[result.status] || 'Status unavailable';
+                    badge.className = `reservation-status ${reservationStatusClasses[result.status] || 'unknown'}`;
+                }
+
+                if (result.status !== 'reserved_for_48_hours') {
+                    select.disabled = true;
+                    submitButton.disabled = true;
+                } else {
+                    submitButton.disabled = false;
+                }
+                submitButton.textContent = 'Save status';
+                message.textContent = 'Reservation status updated successfully.';
+                message.classList.add('success');
+            } catch (error) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Save status';
+                message.textContent = error instanceof Error ? error.message : 'The reservation status could not be updated.';
+                message.classList.add('error');
+            }
+        });
+    });

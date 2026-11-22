@@ -3,9 +3,79 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'bootstrap.php';
+require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirestoreClient.php';
 require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'FirestoreAdminClient.php';
 
 try {
+    $baseReservation = [
+        'jewelerId' => 'jeweler_test',
+        'status' => 'reserved_for_48_hours',
+        'reservationExpiresAt' => '2026-11-22T23:00:00+00:00',
+    ];
+    $baseProduct = ['jewelerId' => 'jeweler_test'];
+
+    FirestoreAdminClient::validateJewelryReservationStatus(
+        $baseReservation,
+        $baseProduct,
+        'jeweler_test',
+        'handed_to_user',
+        new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+    );
+    FirestoreAdminClient::validateJewelryReservationStatus(
+        $baseReservation,
+        $baseProduct,
+        'jeweler_test',
+        'refunded_deposit',
+        new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+    );
+
+    try {
+        FirestoreAdminClient::validateJewelryReservationStatus(
+            $baseReservation,
+            $baseProduct,
+            'jeweler_test',
+            'user_didnt_pick_up',
+            new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+        );
+        throw new RuntimeException('An unexpired reservation must not be marked not collected.');
+    } catch (InvalidArgumentException) {
+    }
+
+    FirestoreAdminClient::validateJewelryReservationStatus(
+        $baseReservation,
+        $baseProduct,
+        'jeweler_test',
+        'user_didnt_pick_up',
+        new DateTimeImmutable('2026-11-23T00:00:00+00:00')
+    );
+
+    try {
+        FirestoreAdminClient::validateJewelryReservationStatus(
+            $baseReservation,
+            $baseProduct,
+            'another_jeweler',
+            'handed_to_user',
+            new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+        );
+        throw new RuntimeException('Cross-jeweler reservation access must be denied.');
+    } catch (FirestoreException $exception) {
+        if ($exception->httpStatus() !== 403) {
+            throw new RuntimeException('Cross-jeweler access should return HTTP 403.');
+        }
+    }
+
+    try {
+        FirestoreAdminClient::validateJewelryReservationStatus(
+            array_merge($baseReservation, ['status' => 'handed_to_user']),
+            $baseProduct,
+            'jeweler_test',
+            'refunded_deposit',
+            new DateTimeImmutable('2026-11-22T22:00:00+00:00')
+        );
+        throw new RuntimeException('Terminal reservation statuses must not be changed.');
+    } catch (InvalidArgumentException) {
+    }
+
     $firestore = FirestoreAdminClient::fromEnvironment();
     $reservations = $firestore->collection('jewelryReservations');
 
